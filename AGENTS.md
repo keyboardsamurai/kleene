@@ -4,6 +4,10 @@
 
 Log architectural decisions as numbered ADRs in `docs/adr/`, ISO 42010, ASD-STE100 language, as short as the decision allows. `docs/adr/` is the **only** place that carries ADR text — `AGENTS.md` carries the boundaries, the invariants and the working rules and points here. A decision that dies is deleted and its number is listed under `## Withdrawn` in `docs/adr/README.md`, never reused and never renumbered. `CONTEXT.md` is the glossary; use its terms in ADRs, docs and messages.
 
+## Sub-Agent Context Budget
+
+When orchestrating sub-agents (swarms, workflows, parallel Agent calls), keep each sub-agent's context under ~150k tokens — performance degrades noticeably beyond that. If a task would push an agent past this, don't just let it run long: restructure the orchestration to break the work into smaller, sustainable units (more agents with narrower scopes, pipeline stages, or sequential handoffs), and pass only the distilled context each sub-agent actually needs (summaries, file lists, structured findings) rather than raw accumulated output.
+
 ## Status
 
 Pre-implementation: no source code or `pom.xml` exists yet. The repo holds the design only. Source of truth, in priority order:
@@ -55,7 +59,7 @@ The pipeline is **Question → ask → Judge → validate → Evidence → Polic
 - Spec §4 lists the minimum required tests. Each feature needs its listed tests before it counts as done.
 
 
-## Implementation Steps
+## Implementation Rules
 
 ### 1. ALWAYS Start with Tests (TDD)
 ### 2. Apply SOLID Principles Rigorously
