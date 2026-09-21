@@ -52,7 +52,8 @@ import kotlin.time.toKotlinDuration
  * It repeats an attempt up to [maxRetries] times on HTTP 408, 429 and 5xx, a timeout or an I/O error; never on
  * 400, 401, 403, 422 or a malformed response. Before each retry it waits what the server asks for (`retry-after-ms`,
  * else `Retry-After` in seconds or as an HTTP date), else 0.5 s × 2ⁿ capped at 5 s, ± 25% jitter. When no retry is left it throws
- * the last failure: [KleeneException.RateLimited], [KleeneException.Overloaded] or [KleeneException.Timeout].
+ * the last failure: [KleeneException.RateLimited], [KleeneException.Overloaded], [KleeneException.Unavailable] or
+ * [KleeneException.Timeout].
  * Cancelling the caller cancels the attempt or the wait.
  */
 class SystemOneJudge(
@@ -101,7 +102,7 @@ class SystemOneJudge(
         } catch (e: HttpTimeoutException) {
             throw Retryable(timedOut(e))
         } catch (e: IOException) {
-            throw Retryable(KleeneException.Overloaded("$baseUrl is unreachable: $e", status = null, cause = e))
+            throw Retryable(KleeneException.Unavailable("$baseUrl is unreachable: $e", cause = e))
         } ?: throw Retryable(timedOut(cause = null))
         if (reply.statusCode() !in 200..299) throw failure(reply)
         return decode(reply.body(), reply.headers().firstValue("x-typesafe-request-id").orElse(null))

@@ -20,7 +20,6 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -160,13 +159,12 @@ class SystemOneTransportTest {
     }
 
     @Test
-    fun `an unreachable server is retried, then Overloaded`() = runTest {
+    fun `an unreachable server is retried, then Unavailable`() = runTest {
         val port = ServerSocket(0).use { it.localPort }
         val judge = SystemOneJudge("http://127.0.0.1:$port", "jev-1.13.0", maxRetries = 2)
 
-        val error = assertFailsWith<KleeneException.Overloaded> { ask(judge) }
+        val error = assertFailsWith<KleeneException.Unavailable> { ask(judge) }
 
-        assertNull(error.status)
         assertIs<IOException>(error.cause)
         assertContains(error.message!!, "unreachable")
         assertTrue(currentTime in 1_125..1_875, "expected two backoff waits, waited ${currentTime}ms")

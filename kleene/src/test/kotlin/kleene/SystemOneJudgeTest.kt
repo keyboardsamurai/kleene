@@ -297,13 +297,12 @@ class SystemOneJudgeTest {
     }
 
     @Test
-    fun `an unreachable server is Overloaded with the I-O error as cause`() {
+    fun `an unreachable server is Unavailable with the I-O error as cause`() {
         val port = ServerSocket(0).use { it.localPort }
         val judge = SystemOneJudge("http://127.0.0.1:$port", "jev-1.13.0", maxRetries = 0)
 
-        val error = assertFailsWith<KleeneException.Overloaded> { runBlocking { Questions(Kleene(judge)).urgent(ticket) } }
+        val error = assertFailsWith<KleeneException.Unavailable> { runBlocking { Questions(Kleene(judge)).urgent(ticket) } }
 
-        assertNull(error.status)
         assertIs<IOException>(error.cause)
     }
 

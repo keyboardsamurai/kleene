@@ -129,7 +129,7 @@ KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=kev-4b mvn test -Dgroups=live
 
 UNKNOWN means the judge answered but not clearly enough for your `Policy`: handle it with `when` or `orElse`.
 Failures throw `KleeneException` (`Authentication`, `InvalidRequest`, `RateLimited`, `Overloaded`,
-`Timeout`, `Malformed`, `Unsupported`) and never become UNKNOWN. Cancellation propagates.
+`Unavailable`, `Timeout`, `Malformed`, `Unsupported`) and never become UNKNOWN. Cancellation propagates.
 
 ## License
 
