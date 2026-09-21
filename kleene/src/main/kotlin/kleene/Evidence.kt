@@ -87,4 +87,4 @@ data class Evidence<T : Any>(
     }
 }
 
-private fun Double.show(): String = "%.4f".format(Locale.ROOT, this).trimEnd('0').trimEnd('.')
+internal fun Double.show(): String = "%.4f".format(Locale.ROOT, this).trimEnd('0').trimEnd('.')
