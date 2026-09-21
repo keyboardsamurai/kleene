@@ -123,6 +123,18 @@ class SystemOneJudgeTest {
         assertEquals(1.65, kev.clarity.expected)
     }
 
+    @Test
+    fun `a captured TypeSafe response is kept exactly as received`() {
+        val live = outcomesFrom("response-typesafe-captured.json")
+
+        assertEquals(listOf(0.6, 1.0 - 0.6), live.urgent.probabilities)
+        assertEquals(listOf(0.0, 1.0, 0.0), live.route.probabilities)
+        assertEquals(1.0, live.route.confidence)
+        assertEquals(listOf(0.0, 0.21, 0.79), live.clarity.probabilities)
+        assertEquals(1.79, live.clarity.expected)
+        assertEquals("jev-1.13.0", live.clarity.model)
+    }
+
     private fun <T : Any> assertSameShape(expected: Evidence<T>, actual: Evidence<T>) {
         assertEquals(expected.kind, actual.kind)
         assertEquals(expected.options, actual.options)
