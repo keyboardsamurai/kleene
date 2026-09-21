@@ -38,13 +38,19 @@ private fun WireQuestion.validateScore(raw: Raw.Score) {
     raw.confidence?.let { requireProbability("confidence", it) }
     requireSumNearOne(raw.probabilities)
     val mean = raw.probabilities.withIndex().sumOf { (level, p) -> level * p }
-    if (!raw.expected.isFinite() || abs(raw.expected - mean) > tolerance) {
-        malformed("has expected=${raw.expected}, more than $tolerance from Σ i·pᵢ=$mean")
+    if (!raw.expected.isFinite() || abs(raw.expected - mean) > expectedTolerance) {
+        malformed("has expected=${raw.expected}, more than $expectedTolerance from Σ i·pᵢ=$mean")
     }
 }
 
 /** Allowed distance from 1 of a distribution's sum: 0.006 per label. */
 private val WireQuestion.tolerance: Double get() = 0.006 * labels.size
+
+/**
+ * Allowed distance of a score's expected level from Σ i·pᵢ: 0.006 for each 2-dp rounded wire number it
+ * combines, `expected` itself plus pᵢ weighted by i (ADR-0003).
+ */
+private val WireQuestion.expectedTolerance: Double get() = 0.006 * (1 + labels.size * (labels.size - 1) / 2)
 
 private fun WireQuestion.requireSumNearOne(probabilities: Collection<Double>) {
     val sum = probabilities.sum()

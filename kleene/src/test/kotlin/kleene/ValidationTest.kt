@@ -15,6 +15,9 @@ class ValidationTest {
     private val route by ai.choose("Which team should handle this?", "billing" to 1, "technical" to 2, "other" to 3)
     private val clarity by ai.score("How clearly is the problem described?", "Unclear", "Partly clear", "Clear")
     private val tenWay by ai.choose("Which of ten?", *(0 until 10).map { "o$it" to it }.toTypedArray())
+    private val severity by ai.score("How severe is the problem?", "None", "Low", "Medium", "High")
+    private val satisfaction by ai.score("How satisfied is the customer?", *(1..5).map { "s$it" }.toTypedArray())
+    private val tenLevel by ai.score("Which of ten levels?", *(0 until 10).map { "l$it" }.toTypedArray())
 
     private val goodUrgent = "urgent" to Raw.Noul(0.9)
     private val goodRoute = "route" to choice(0.9, 0.08, 0.02)
@@ -123,6 +126,36 @@ class ValidationTest {
     @Test
     fun `a score expected level inconsistent with its distribution is malformed`() = runTest {
         assertMalformed(clarity, answers = answerByName("clarity" to Raw.Score(1.0, listOf(0.1, 0.2, 0.7), null)))
+    }
+
+    @Test
+    fun `a live TypeSafe score rounded to two decimals passes at four levels`() = runTest {
+        reply = answerByName("severity" to Raw.Score(1.43, listOf(0.39, 0.10, 0.20, 0.30), null))
+
+        assertIs<Rating>(ai.ask("I was charged twice", severity)[severity])
+    }
+
+    @Test
+    fun `a Kev score rounded to two decimals passes at five levels`() = runTest {
+        reply = answerByName("satisfaction" to Raw.Score(3.96, listOf(0.0, 0.0, 0.0, 0.0, 0.98), null))
+
+        assertIs<Rating>(ai.ask("I was charged twice", satisfaction)[satisfaction])
+    }
+
+    @Test
+    fun `a one-based expected level is malformed even at ten levels`() = runTest {
+        val uniform = List(10) { 0.1 }
+
+        assertMalformed(tenLevel, answers = answerByName("tenLevel" to Raw.Score(5.5, uniform, null)))
+    }
+
+    @Test
+    fun `the expected level tolerance grows with the rounded numbers it combines`() = runTest {
+        val flat = List(5) { 0.2 }
+        reply = answerByName("satisfaction" to Raw.Score(2.06, flat, null))
+        ai.ask("I was charged twice", satisfaction)
+
+        assertMalformed(satisfaction, answers = answerByName("satisfaction" to Raw.Score(2.07, flat, null)))
     }
 
     @Test
