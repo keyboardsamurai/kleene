@@ -17,7 +17,7 @@ sealed class KleeneException(message: String, cause: Throwable? = null) : Runtim
     class RateLimited(message: String, val retryAfter: Duration?) : KleeneException(message)
 
     /** The judge is overloaded (HTTP 5xx, e.g. 529) after retries were exhausted. */
-    class Overloaded(message: String, val status: Int?, cause: Throwable? = null) : KleeneException(message, cause)
+    class Overloaded(message: String, val status: Int) : KleeneException(message)
 
     /**
      * The judge can't be reached (connection refused, DNS, reset) after retries were exhausted. Usually configuration:
