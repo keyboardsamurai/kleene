@@ -11,6 +11,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import java.io.IOException
 import java.net.ServerSocket
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -130,6 +133,29 @@ class SystemOneTransportTest {
             assertFailsWith<KleeneException.Timeout> { ask(judge(stub, maxRetries = 1, timeout = 200.milliseconds)) }
 
             assertEquals(2, stub.received.size)
+        }
+    }
+
+    @Test
+    fun `a body that stalls after the headers is a Timeout after the per-attempt timeout`() = runTest(timeout = 20.seconds) {
+        StallingServer().use { server ->
+            val judge = SystemOneJudge(server.baseUrl, "jev-1.13.0", timeout = 300.milliseconds, maxRetries = 1)
+
+            val took = measureTime { assertFailsWith<KleeneException.Timeout> { ask(judge) } }
+
+            assertEquals(2, server.accepted)
+            assertTrue(took < 3.seconds, "two attempts of 300ms took $took")
+        }
+    }
+
+    @Test
+    fun `Retry-After as an HTTP date waits until that date`() = runTest {
+        val inThreeSeconds = DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC).plusSeconds(3))
+        StubServer(Reply(429, busy, mapOf("Retry-After" to inThreeSeconds))).use { stub ->
+            val error = assertFailsWith<KleeneException.RateLimited> { ask(judge(stub, maxRetries = 1)) }
+
+            assertTrue(error.retryAfter!! in 1.seconds..3.seconds, "retryAfter=${error.retryAfter}")
+            assertTrue(currentTime in 1_000..3_000, "waited ${currentTime}ms")
         }
     }
 
