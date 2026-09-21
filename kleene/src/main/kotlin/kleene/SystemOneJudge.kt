@@ -152,19 +152,14 @@ class SystemOneJudge(
 private fun refuseUnsupported(question: WireQuestion) {
     val (allowed, what) = when (question.kind) {
         Kind.FEELS -> return
-        Kind.CHOOSE -> 2..255 to "options"
-        Kind.SCORE -> 2..10 to "levels"
+        Kind.CHOOSE -> CHOOSE_OPTIONS to "options"
+        Kind.SCORE -> SCORE_LEVELS to "levels"
     }
     if (question.labels.size !in allowed) {
         throw KleeneException.Unsupported(
             "question \"${question.name}\" (${question.id}) has ${question.labels.size} $what; System One allows $allowed",
         )
     }
-}
-
-private fun State.toJson(): JsonElement = when (this) {
-    is State.Text -> JsonPrimitive(value)
-    is State.Json -> value
 }
 
 private fun WireQuestion.toJson(): JsonObject = buildJsonObject {
@@ -197,7 +192,7 @@ private fun decode(body: String, requestId: String?): Response {
         model = root["model"].text("model"),
         answers = root["answers"].obj("answers").mapValues { (id, answer) -> answer.toRaw("answers.$id") },
         usage = root["usage"]?.takeUnless { it is JsonNull }?.obj("usage")?.let {
-            Usage(it["input_tokens"].count("usage.input_tokens"), it["output_tokens"].count("usage.output_tokens"))
+            Usage(it["input_tokens"].integer("usage.input_tokens"), it["output_tokens"].integer("usage.output_tokens"))
         },
         requestId = requestId,
     )
@@ -234,7 +229,7 @@ private fun JsonElement?.text(path: String): String = stringOrNull() ?: malforme
 private fun JsonElement?.number(path: String): Double =
     (this as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull ?: malformed("$path is not a number")
 
-private fun JsonElement?.count(path: String): Long =
+private fun JsonElement?.integer(path: String): Long =
     (this as? JsonPrimitive)?.takeUnless { it.isString }?.longOrNull ?: malformed("$path is not an integer")
 
 private fun JsonElement?.stringOrNull(): String? = (this as? JsonPrimitive)?.takeIf { it.isString }?.content

@@ -45,7 +45,7 @@ name from the property. Renaming an option label creates a new question.
 
 ## Evidence and reapply
 
-Every `Verdict` keeps the probabilities exactly as the judge returned them, so you can re-decide
+Every `Verdict` keeps the probabilities exactly as the judge returned them, so you can reapply a different policy
 without another model call:
 
 ```kotlin

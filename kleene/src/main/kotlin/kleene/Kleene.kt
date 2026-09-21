@@ -1,6 +1,7 @@
 package kleene
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * The runtime: binds one [Judge] to a default [Policy] and creates the [Question]s that are asked through it.
@@ -12,6 +13,12 @@ class Kleene(val judge: Judge, val policy: Policy = Policy())
 sealed interface State {
     data class Text(val value: String) : State
     data class Json(val value: JsonElement) : State
+}
+
+/** The state as it goes on the wire: a string, or the JSON element as-is. */
+internal fun State.toJson(): JsonElement = when (this) {
+    is State.Text -> JsonPrimitive(value)
+    is State.Json -> value
 }
 
 /**

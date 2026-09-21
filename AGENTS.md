@@ -10,7 +10,7 @@ When orchestrating sub-agents (swarms, workflows, parallel Agent calls), keep ea
 
 ## Status
 
-Pre-implementation: no source code or `pom.xml` exists yet. The repo holds the design only. Source of truth, in priority order:
+v1 is implemented (Maven build, `kleene` module, tests). Source of truth, in priority order:
 
 1. `docs/spec.md`: the v1 API, semantics, wire mapping, and required tests. Build against this.
 2. `docs/adr/`: decisions with trade-offs. Don't re-open them without a new ADR.
@@ -28,13 +28,13 @@ Pre-implementation: no source code or `pom.xml` exists yet. The repo holds the d
 - Ship order: **1 Core → 3 Local judges (SystemOneJudge) → 2 Check**. Spec sections follow this order.
 - Spec §0 lists what is out of v1. Don't build it.
 
-## Commands (once the pom exists, per spec)
+## Commands
 
 ```sh
 mvn test                                        # unit tests; `live` tag excluded
 mvn test -pl kleene -Dtest=EvidenceTest#name    # single test
 KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=... mvn test -Dgroups=live   # live smoke tests
-scripts/kev.sh                                  # start a local Kev judge on :8009 (planned)
+scripts/kev.sh                                  # start a local Kev judge on :8009
 ```
 
 ## Architecture

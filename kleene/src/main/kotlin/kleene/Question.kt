@@ -81,11 +81,15 @@ private class Feels(kleene: Kleene, instructions: String, name: String?) :
     }
 }
 
+/** System One's limits, enforced for every judge (spec §3.4). */
+internal val CHOOSE_OPTIONS = 2..255
+internal val SCORE_LEVELS = 2..10
+
 private class Choose<T : Any>(kleene: Kleene, instructions: String, private val options: List<Pair<String, T>>, name: String?) :
     Question<Verdict<T>>(kleene, Kind.CHOOSE, instructions, options.map { it.first }, name) {
 
     init {
-        invalidUnless(options.size in 2..255) { "choose needs 2 to 255 options, got ${options.size}" }
+        invalidUnless(options.size in CHOOSE_OPTIONS) { "choose needs $CHOOSE_OPTIONS options, got ${options.size}" }
         invalidUnless(labels.distinct() == labels) { "duplicate option labels in $labels" }
         invalidUnless(options.distinctBy { it.second }.size == options.size) { "duplicate option values in ${options.map { it.second }}" }
     }
@@ -103,7 +107,7 @@ private class Score(kleene: Kleene, instructions: String, levels: List<String>, 
     Question<Rating>(kleene, Kind.SCORE, instructions, levels, name) {
 
     init {
-        invalidUnless(levels.size in 2..10) { "score needs 2 to 10 levels, got ${levels.size}" }
+        invalidUnless(levels.size in SCORE_LEVELS) { "score needs $SCORE_LEVELS levels, got ${levels.size}" }
         invalidUnless(levels.distinct() == levels) { "duplicate levels in $levels" }
     }
 

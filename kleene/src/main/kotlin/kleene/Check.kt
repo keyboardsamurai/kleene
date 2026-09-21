@@ -139,11 +139,7 @@ class Report(val contract: Contract, val results: List<Result>, val judge: Strin
 private fun candidate(output: String, source: State?): State = State.Json(
     buildJsonObject {
         put("candidate", output)
-        when (source) {
-            is State.Text -> put("source", source.value)
-            is State.Json -> put("source", source.value)
-            null -> Unit
-        }
+        source?.let { put("source", it.toJson()) }
     },
 )
 
