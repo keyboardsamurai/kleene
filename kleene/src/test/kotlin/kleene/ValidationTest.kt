@@ -129,14 +129,14 @@ class ValidationTest {
     }
 
     @Test
-    fun `a live TypeSafe score rounded to two decimals passes at four levels`() = runTest {
+    fun `a captured TypeSafe score answer rounded to two decimals passes at four levels`() = runTest {
         reply = answerByName("severity" to Raw.Score(1.43, listOf(0.39, 0.10, 0.20, 0.30), null))
 
         assertIs<Rating>(ai.ask("I was charged twice", severity)[severity])
     }
 
     @Test
-    fun `a Kev score rounded to two decimals passes at five levels`() = runTest {
+    fun `a Kev score answer rounded to two decimals passes at five levels`() = runTest {
         reply = answerByName("satisfaction" to Raw.Score(3.96, listOf(0.0, 0.0, 0.0, 0.0, 0.98), null))
 
         assertIs<Rating>(ai.ask("I was charged twice", satisfaction)[satisfaction])
@@ -153,7 +153,7 @@ class ValidationTest {
     fun `the expected level tolerance grows with the rounded numbers it combines`() = runTest {
         val flat = List(5) { 0.2 }
         reply = answerByName("satisfaction" to Raw.Score(2.06, flat, null))
-        ai.ask("I was charged twice", satisfaction)
+        assertIs<Rating>(ai.ask("I was charged twice", satisfaction)[satisfaction])
 
         assertMalformed(satisfaction, answers = answerByName("satisfaction" to Raw.Score(2.07, flat, null)))
     }

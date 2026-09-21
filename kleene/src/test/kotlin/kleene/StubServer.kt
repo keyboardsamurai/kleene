@@ -54,10 +54,10 @@ class StubServer(vararg replies: Reply) : AutoCloseable {
 }
 
 /**
- * A raw HTTP server that answers every request with 200 headers and the first bytes of a 100-byte body,
- * then stalls with the connection open until [close].
+ * A raw HTTP server that answers every request with 200 headers and the first bytes of a 100-byte body.
+ * Then it stalls with the connection open until [close], or with [hangUp] it closes the connection at once.
  */
-class StallingServer : AutoCloseable {
+class PartialAnswerServer(private val hangUp: Boolean = false) : AutoCloseable {
     private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     private val connections: MutableList<Socket> = CopyOnWriteArrayList()
 
@@ -80,13 +80,16 @@ class StallingServer : AutoCloseable {
         }
     }
 
-    private fun answerPartially(connection: Socket) = try {
-        val request = connection.getInputStream().bufferedReader(Charsets.ISO_8859_1)
-        while (request.readLine().orEmpty().isNotEmpty()) Unit // the request line and headers
-        val head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n"
-        connection.getOutputStream().apply { write((head + """{"model":""").encodeToByteArray()) }.flush()
-    } catch (e: IOException) {
-        Unit // closed by the client or by close()
+    private fun answerPartially(connection: Socket) {
+        try {
+            val request = connection.getInputStream().bufferedReader(Charsets.ISO_8859_1)
+            while (request.readLine().orEmpty().isNotEmpty()) Unit // the request line and headers
+            val head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n"
+            connection.getOutputStream().apply { write((head + """{"model":""").encodeToByteArray()) }.flush()
+            if (hangUp) connection.close()
+        } catch (e: IOException) {
+            Unit // closed by the client or by close()
+        }
     }
 
     override fun close() {

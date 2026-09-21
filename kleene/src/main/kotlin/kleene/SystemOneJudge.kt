@@ -102,7 +102,7 @@ class SystemOneJudge(
         } catch (e: HttpTimeoutException) {
             throw Retryable(timedOut(e))
         } catch (e: IOException) {
-            throw Retryable(KleeneException.Unavailable("$baseUrl is unreachable: $e", cause = e))
+            throw Retryable(KleeneException.Unavailable("connection to $baseUrl failed: $e", cause = e))
         } ?: throw Retryable(timedOut(cause = null))
         if (reply.statusCode() !in 200..299) throw failure(reply)
         return decode(reply.body(), reply.headers().firstValue("x-typesafe-request-id").orElse(null))

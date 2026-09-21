@@ -19,10 +19,7 @@ sealed class KleeneException(message: String, cause: Throwable? = null) : Runtim
     /** The judge is overloaded (HTTP 5xx, e.g. 529) after retries were exhausted. */
     class Overloaded(message: String, val status: Int) : KleeneException(message)
 
-    /**
-     * The judge can't be reached (connection refused, DNS, reset) after retries were exhausted. Usually configuration:
-     * a wrong base URL, or a local judge that is not running (ADR-0004).
-     */
+    /** The connection to the judge failed (refused, DNS, reset, TLS) after retries were exhausted (ADR-0004). */
     class Unavailable(message: String, cause: Throwable? = null) : KleeneException(message, cause)
 
     /** Every attempt timed out. */

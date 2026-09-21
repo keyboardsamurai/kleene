@@ -137,7 +137,7 @@ class SystemOneTransportTest {
 
     @Test
     fun `a body that stalls after the headers is a Timeout after the per-attempt timeout`() = runTest(timeout = 20.seconds) {
-        StallingServer().use { server ->
+        PartialAnswerServer().use { server ->
             val judge = SystemOneJudge(server.baseUrl, "jev-1.13.0", timeout = 300.milliseconds, maxRetries = 1)
 
             val took = measureTime { assertFailsWith<KleeneException.Timeout> { ask(judge) } }
@@ -166,8 +166,20 @@ class SystemOneTransportTest {
         val error = assertFailsWith<KleeneException.Unavailable> { ask(judge) }
 
         assertIs<IOException>(error.cause)
-        assertContains(error.message!!, "unreachable")
+        assertContains(error.message!!, "connection to http://127.0.0.1:$port failed")
         assertTrue(currentTime in 1_125..1_875, "expected two backoff waits, waited ${currentTime}ms")
+    }
+
+    @Test
+    fun `a connection closed in the middle of the body is retried, then Unavailable`() = runTest(timeout = 20.seconds) {
+        PartialAnswerServer(hangUp = true).use { server ->
+            val judge = SystemOneJudge(server.baseUrl, "jev-1.13.0", maxRetries = 2)
+
+            val error = assertFailsWith<KleeneException.Unavailable> { ask(judge) }
+
+            assertIs<IOException>(error.cause)
+            assertEquals(3, server.accepted)
+        }
     }
 
     @Test

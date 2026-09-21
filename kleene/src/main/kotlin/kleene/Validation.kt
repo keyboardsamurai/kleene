@@ -44,7 +44,7 @@ private fun WireQuestion.validateScore(raw: Raw.Score) {
 }
 
 /** Allowed distance from 1 of a distribution's sum: 0.006 per label. */
-private val WireQuestion.tolerance: Double get() = 0.006 * labels.size
+private val WireQuestion.sumTolerance: Double get() = 0.006 * labels.size
 
 /**
  * Allowed distance of a score's expected level from Σ i·pᵢ: 0.006 for each 2-dp rounded wire number it
@@ -54,7 +54,7 @@ private val WireQuestion.expectedTolerance: Double get() = 0.006 * (1 + labels.s
 
 private fun WireQuestion.requireSumNearOne(probabilities: Collection<Double>) {
     val sum = probabilities.sum()
-    if (abs(sum - 1.0) > tolerance) malformed("has probabilities summing to $sum, more than $tolerance from 1")
+    if (abs(sum - 1.0) > sumTolerance) malformed("has probabilities summing to $sum, more than $sumTolerance from 1")
 }
 
 /** NaN and infinities are outside the range too. */

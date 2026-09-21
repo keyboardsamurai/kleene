@@ -1,12 +1,14 @@
 # System One wire fixtures
 
-Real captures, both on 2026-09-21, both answers to the three golden requests combined into one ask:
+Real captures, all on 2026-09-21. The first two answer the three golden requests combined into one ask:
 
 - `response-typesafe-captured.json`: `api.typesafe.ai`, model `jev-1.13.0`. Every number rounded to 2 dp.
 - `response-kev-captured.json`: local Kev (`scripts/kev.sh`, run `jaredpalmer/kev-4b`, bf16 on mps) at `127.0.0.1:8009`,
   model `kev-4b`. Body saved verbatim. Kev rounds every number to 2 dp, echoes the sent `model`, adds `latency_ms`
-  (3248.8, first requests take 3–5 s), and sends no request-id header (`server: uvicorn`). Confidence: none for noul,
-  choice `(p_max−1/K)/(1−1/K)`, score `1 − E|i−mode|/(L−1)`.
+  (3248.8, first requests take 3–5 s), and sends no request-id header (`server: uvicorn`). Kev confidence: see spec §3.5.
+- `response-kev-captured-10-levels.json`: the same Kev server and model, one score question `effort` with levels
+  "1".."10", state "Rename one config key and update its two call sites.". Body saved verbatim. The 2-dp rounding
+  drifts: Σ pᵢ = 0.98 and `score` 2.88 against Σ i·pᵢ = 2.78 (0.10 apart, above the old 0.006 × K = 0.06 bound).
 
 Hand-built from documented shapes:
 

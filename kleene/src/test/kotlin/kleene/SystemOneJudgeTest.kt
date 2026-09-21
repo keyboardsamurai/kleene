@@ -33,6 +33,10 @@ class SystemOneJudgeTest {
 
     private val ticket = "The upload failed and nothing was saved."
 
+    private val typesafeCapture = "response-typesafe-captured.json"
+
+    private val kevCapture = "response-kev-captured.json"
+
     private fun resource(name: String): String =
         checkNotNull(javaClass.getResource("/systemone/$name")) { "missing fixture $name" }.readText()
 
@@ -62,7 +66,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `feels request matches the golden file byte for byte`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"))).use { stub ->
+        StubServer(Reply(200, answersFrom(typesafeCapture, "urgent.3173dac6eec83f01"))).use { stub ->
             val q = Questions(Kleene(judge(stub)))
 
             q.urgent(ticket)
@@ -77,7 +81,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `choose request matches the golden file byte for byte`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "route.baada429096e81f4"))).use { stub ->
+        StubServer(Reply(200, answersFrom(typesafeCapture, "route.baada429096e81f4"))).use { stub ->
             val q = Questions(Kleene(judge(stub)))
 
             q.route(ticket)
@@ -88,7 +92,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `score request matches the golden file byte for byte`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "clarity.158a008ffc043dfa"))).use { stub ->
+        StubServer(Reply(200, answersFrom(typesafeCapture, "clarity.158a008ffc043dfa"))).use { stub ->
             val q = Questions(Kleene(judge(stub)))
 
             q.clarity(ticket)
@@ -110,8 +114,8 @@ class SystemOneJudgeTest {
 
     @Test
     fun `TypeSafe and Kev captures give the same evidence shapes`() {
-        val typesafe = outcomesFrom("response-typesafe-captured.json")
-        val kev = outcomesFrom("response-kev-captured.json")
+        val typesafe = outcomesFrom(typesafeCapture)
+        val kev = outcomesFrom(kevCapture)
 
         assertSameShape(typesafe.urgent, kev.urgent)
         assertSameShape(typesafe.route, kev.route)
@@ -123,27 +127,41 @@ class SystemOneJudgeTest {
 
     @Test
     fun `a captured TypeSafe response is kept exactly as received`() {
-        val live = outcomesFrom("response-typesafe-captured.json")
+        val captured = outcomesFrom(typesafeCapture)
 
-        assertEquals(listOf(0.6, 1.0 - 0.6), live.urgent.probabilities)
-        assertEquals(listOf(0.0, 1.0, 0.0), live.route.probabilities)
-        assertEquals(1.0, live.route.confidence)
-        assertEquals(listOf(0.0, 0.21, 0.79), live.clarity.probabilities)
-        assertEquals(1.79, live.clarity.expected)
-        assertEquals("jev-1.13.0", live.clarity.model)
+        assertEquals(listOf(0.6, 1.0 - 0.6), captured.urgent.probabilities)
+        assertEquals(listOf(0.0, 1.0, 0.0), captured.route.probabilities)
+        assertEquals(1.0, captured.route.confidence)
+        assertEquals(listOf(0.0, 0.21, 0.79), captured.clarity.probabilities)
+        assertEquals(1.79, captured.clarity.expected)
+        assertEquals("jev-1.13.0", captured.clarity.model)
     }
 
     @Test
     fun `a captured Kev response is kept exactly as received`() {
-        val live = outcomesFrom("response-kev-captured.json")
+        val captured = outcomesFrom(kevCapture)
 
-        assertEquals(listOf(0.42, 1.0 - 0.42), live.urgent.probabilities)
-        assertEquals(listOf(0.03, 0.71, 0.26), live.route.probabilities)
-        assertEquals(0.56, live.route.confidence)
-        assertEquals(listOf(0.14, 0.19, 0.67), live.clarity.probabilities)
-        assertEquals(1.53, live.clarity.expected)
-        assertEquals(0.77, live.clarity.confidence)
-        assertEquals("kev-4b", live.clarity.model)
+        assertEquals(listOf(0.42, 1.0 - 0.42), captured.urgent.probabilities)
+        assertEquals(listOf(0.03, 0.71, 0.26), captured.route.probabilities)
+        assertEquals(0.56, captured.route.confidence)
+        assertEquals(listOf(0.14, 0.19, 0.67), captured.clarity.probabilities)
+        assertEquals(1.53, captured.clarity.expected)
+        assertEquals(0.77, captured.clarity.confidence)
+        assertEquals("kev-4b", captured.clarity.model)
+    }
+
+    @Test
+    fun `a captured Kev 10-level score answer with 2-dp drift passes validation as received`() = runBlocking {
+        StubServer(Reply(200, resource("response-kev-captured-10-levels.json"))).use { stub ->
+            val levels = (1..10).map { "$it" }.toTypedArray()
+            val effort = Kleene(judge(stub)).score("How much effort will this ticket take?", *levels, name = "effort")
+
+            val rating = effort("Rename one config key and update its two call sites.")
+
+            assertEquals(listOf(0.15, 0.2, 0.16, 0.16, 0.08, 0.09, 0.04, 0.05, 0.03, 0.02), rating.probabilities)
+            assertEquals(2.88, rating.expected) // Σ i·pᵢ = 2.78 and Σ pᵢ = 0.98: both drift from 2-dp rounding
+            assertEquals(0.76, rating.confidence)
+        }
     }
 
     private fun <T : Any> assertSameShape(expected: Evidence<T>, actual: Evidence<T>) {
@@ -155,7 +173,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `answers carry the resolved model, usage, request id and judge id`() = runBlocking {
-        val reply = Reply(200, resource("response-typesafe-captured.json"), mapOf("x-typesafe-request-id" to "req_0123456789abcdef0123456789abcdef"))
+        val reply = Reply(200, resource(typesafeCapture), mapOf("x-typesafe-request-id" to "req_0123456789abcdef0123456789abcdef"))
         StubServer(reply).use { stub ->
             val ai = Kleene(SystemOneJudge(baseUrl = stub.baseUrl, model = "jev-latest"))
             val q = Questions(ai)
@@ -172,7 +190,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `Authorization header is sent only when there is an API key`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"))).use { stub ->
+        StubServer(Reply(200, answersFrom(typesafeCapture, "urgent.3173dac6eec83f01"))).use { stub ->
             Questions(Kleene(judge(stub, apiKey = "sk-test"))).urgent(ticket)
             Questions(Kleene(judge(stub, apiKey = null))).urgent(ticket)
 
@@ -250,7 +268,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `a JSON state is sent as the element itself`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"))).use { stub ->
+        StubServer(Reply(200, answersFrom(typesafeCapture, "urgent.3173dac6eec83f01"))).use { stub ->
             val state = buildJsonObject { put("ticket", ticket) }
 
             Questions(Kleene(judge(stub))).urgent(state)
@@ -294,7 +312,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `an attempt slower than the timeout is a Timeout`() {
-        val slow = Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"), delay = 500.milliseconds)
+        val slow = Reply(200, answersFrom(typesafeCapture, "urgent.3173dac6eec83f01"), delay = 500.milliseconds)
         StubServer(slow).use { stub ->
             val judge = SystemOneJudge(stub.baseUrl, "jev-1.13.0", timeout = 50.milliseconds, maxRetries = 0)
 
@@ -306,6 +324,15 @@ class SystemOneJudgeTest {
     fun `an unreachable server is Unavailable with the I-O error as cause`() {
         val port = ServerSocket(0).use { it.localPort }
         val judge = SystemOneJudge("http://127.0.0.1:$port", "jev-1.13.0", maxRetries = 0)
+
+        val error = assertFailsWith<KleeneException.Unavailable> { runBlocking { Questions(Kleene(judge)).urgent(ticket) } }
+
+        assertIs<IOException>(error.cause)
+    }
+
+    @Test
+    fun `an unknown host is Unavailable with the I-O error as cause`() {
+        val judge = SystemOneJudge("http://kleene-test.invalid", "jev-1.13.0", maxRetries = 0)
 
         val error = assertFailsWith<KleeneException.Unavailable> { runBlocking { Questions(Kleene(judge)).urgent(ticket) } }
 
