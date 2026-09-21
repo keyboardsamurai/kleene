@@ -26,6 +26,13 @@ class EvidenceTest {
     }
 
     @Test
+    fun `feels at the mirrored falseAt of a round acceptAt is accepted as false`() {
+        val verdict = assertIs<Verdict.Accepted<Boolean>>(feelsEvidence(0.1).decide(Policy(acceptAt = 0.9)))
+
+        assertEquals(false, verdict.value)
+    }
+
+    @Test
     fun `feels at one half is unknown`() {
         assertIs<Verdict.Unknown<Boolean>>(feelsEvidence(0.5).decide(policy))
     }
@@ -55,6 +62,13 @@ class EvidenceTest {
     @Test
     fun `choose with minConfidence set and no confidence fails closed`() {
         val evidence = chooseEvidence("a" to 0.9, "b" to 0.1, confidence = null)
+
+        assertFailsWith<KleeneException.Malformed> { evidence.decide(Policy(minConfidence = 0.5)) }
+    }
+
+    @Test
+    fun `choose with minConfidence set and no confidence fails closed even below acceptAt`() {
+        val evidence = chooseEvidence("a" to 0.6, "b" to 0.4, confidence = null)
 
         assertFailsWith<KleeneException.Malformed> { evidence.decide(Policy(minConfidence = 0.5)) }
     }

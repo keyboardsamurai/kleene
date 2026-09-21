@@ -11,7 +11,7 @@ class PolicyTest {
         val policy = Policy(acceptAt = 0.9)
 
         assertEquals(0.9, policy.trueAt)
-        assertEquals(1.0 - 0.9, policy.falseAt)
+        assertEquals(0.1, policy.falseAt)
     }
 
     @Test

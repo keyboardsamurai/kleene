@@ -74,13 +74,13 @@ data class Evidence<T : Any>(
 
     private fun decideChoose(policy: Policy): Verdict<T> {
         val minConfidence = policy.minConfidence
+        if (minConfidence != null && confidence == null) {
+            throw KleeneException.Malformed("minConfidence is set but judge '$judge' reported no confidence")
+        }
         return when {
             topProbability < policy.acceptAt ->
                 Verdict.Unknown(this, policy, "top p=${topProbability.show()} < acceptAt=${policy.acceptAt.show()}")
-            minConfidence == null -> Verdict.Accepted(top, this, policy)
-            confidence == null ->
-                throw KleeneException.Malformed("minConfidence is set but judge '$judge' reported no confidence")
-            confidence < minConfidence ->
+            minConfidence != null && confidence != null && confidence < minConfidence ->
                 Verdict.Unknown(this, policy, "confidence=${confidence.show()} < minConfidence=${minConfidence.show()}")
             else -> Verdict.Accepted(top, this, policy)
         }

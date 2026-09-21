@@ -36,6 +36,14 @@ class VerdictTest {
     }
 
     @Test
+    fun `at acceptAt mirrors falseAt exactly`() {
+        val reapplied = feelsEvidence(0.1).decide(Policy()).at(0.9)
+
+        assertEquals(0.1, reapplied.policy.falseAt)
+        assertEquals(Truth.FALSE, reapplied.truth)
+    }
+
+    @Test
     fun `at acceptAt keeps minConfidence`() {
         val verdict = chooseEvidence("a" to 0.9, "b" to 0.1, confidence = 0.4).decide(Policy(minConfidence = 0.5))
 

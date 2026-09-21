@@ -1,5 +1,7 @@
 package kleene
 
+import java.math.BigDecimal
+
 /**
  * The thresholds that turn [Evidence] into a [Verdict]. Owned by application code, never by the [Judge].
  *
@@ -11,7 +13,7 @@ package kleene
 data class Policy(
     val acceptAt: Double = 0.85,
     val trueAt: Double = acceptAt,
-    val falseAt: Double = 1.0 - acceptAt,
+    val falseAt: Double = mirror(acceptAt),
     val minConfidence: Double? = null,
 ) {
     init {
@@ -21,3 +23,7 @@ data class Policy(
         require(minConfidence == null || minConfidence in 0.0..1.0) { "minConfidence must be in [0, 1], was $minConfidence" }
     }
 }
+
+/** `1 - acceptAt` in decimal, so 0.9 mirrors to exactly 0.1 and not to 0.09999999999999998. */
+private fun mirror(acceptAt: Double): Double =
+    if (acceptAt.isFinite()) (BigDecimal.ONE - BigDecimal.valueOf(acceptAt)).toDouble() else Double.NaN

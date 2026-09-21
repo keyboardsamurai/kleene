@@ -90,7 +90,7 @@ class ValidationTest {
     @Test
     fun `a sum off by more than the tolerance is malformed`() = runTest {
         assertMalformed(route, answers = answerByName("route" to choice(0.5, 0.3, 0.22)))
-        assertMalformed(clarity, answers = answerByName("clarity" to Raw.Score(1.6, listOf(0.1, 0.2, 0.72), null)))
+        assertMalformed(clarity, answers = answerByName("clarity" to Raw.Score(1.64, listOf(0.1, 0.2, 0.72), null)))
     }
 
     @Test

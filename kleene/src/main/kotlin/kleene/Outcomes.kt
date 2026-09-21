@@ -44,7 +44,7 @@ sealed class Verdict<T : Any> {
     fun at(policy: Policy): Verdict<T> = evidence.decide(policy)
 
     /** Reapplies with [acceptAt] as the choose threshold and the feels band `[1 - acceptAt, acceptAt]`. */
-    fun at(acceptAt: Double): Verdict<T> = at(policy.copy(acceptAt = acceptAt, trueAt = acceptAt, falseAt = 1.0 - acceptAt))
+    fun at(acceptAt: Double): Verdict<T> = at(Policy(acceptAt, minConfidence = policy.minConfidence))
 }
 
 /** The accepted value, or [fallback] applied to the [Verdict.Unknown]. */
