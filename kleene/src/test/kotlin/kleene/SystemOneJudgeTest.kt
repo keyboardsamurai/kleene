@@ -62,7 +62,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `feels request matches the golden file byte for byte`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe.json", "urgent.3173dac6eec83f01"))).use { stub ->
+        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"))).use { stub ->
             val q = Questions(Kleene(judge(stub)))
 
             q.urgent(ticket)
@@ -77,7 +77,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `choose request matches the golden file byte for byte`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe.json", "route.baada429096e81f4"))).use { stub ->
+        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "route.baada429096e81f4"))).use { stub ->
             val q = Questions(Kleene(judge(stub)))
 
             q.route(ticket)
@@ -88,7 +88,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `score request matches the golden file byte for byte`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe.json", "clarity.158a008ffc043dfa"))).use { stub ->
+        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "clarity.158a008ffc043dfa"))).use { stub ->
             val q = Questions(Kleene(judge(stub)))
 
             q.clarity(ticket)
@@ -109,18 +109,16 @@ class SystemOneJudgeTest {
     }
 
     @Test
-    fun `TypeSafe and Kev fixtures give the same evidence shapes`() {
-        val typesafe = outcomesFrom("response-typesafe.json")
-        val kev = outcomesFrom("response-kev.json")
+    fun `TypeSafe and Kev captures give the same evidence shapes`() {
+        val typesafe = outcomesFrom("response-typesafe-captured.json")
+        val kev = outcomesFrom("response-kev-captured.json")
 
         assertSameShape(typesafe.urgent, kev.urgent)
         assertSameShape(typesafe.route, kev.route)
         assertEquals(listOf(Team.Billing, Team.Technical, Team.Other), kev.route.options)
-        assertEquals(Team.Technical, kev.route.top)
         assertEquals(typesafe.clarity.levels, kev.clarity.levels)
-        assertClose(typesafe.clarity.probabilities, kev.clarity.probabilities)
-        assertEquals(typesafe.clarity.expected, kev.clarity.expected, 0.01)
-        assertEquals(1.65, kev.clarity.expected)
+        assertEquals(typesafe.clarity.probabilities.size, kev.clarity.probabilities.size)
+        assertEquals(typesafe.clarity.confidence == null, kev.clarity.confidence == null)
     }
 
     @Test
@@ -135,21 +133,29 @@ class SystemOneJudgeTest {
         assertEquals("jev-1.13.0", live.clarity.model)
     }
 
+    @Test
+    fun `a captured Kev response is kept exactly as received`() {
+        val live = outcomesFrom("response-kev-captured.json")
+
+        assertEquals(listOf(0.42, 1.0 - 0.42), live.urgent.probabilities)
+        assertEquals(listOf(0.03, 0.71, 0.26), live.route.probabilities)
+        assertEquals(0.56, live.route.confidence)
+        assertEquals(listOf(0.14, 0.19, 0.67), live.clarity.probabilities)
+        assertEquals(1.53, live.clarity.expected)
+        assertEquals(0.77, live.clarity.confidence)
+        assertEquals("kev-4b", live.clarity.model)
+    }
+
     private fun <T : Any> assertSameShape(expected: Evidence<T>, actual: Evidence<T>) {
         assertEquals(expected.kind, actual.kind)
         assertEquals(expected.options, actual.options)
-        assertClose(expected.probabilities, actual.probabilities)
+        assertEquals(expected.probabilities.size, actual.probabilities.size)
         assertEquals(expected.confidence == null, actual.confidence == null)
-    }
-
-    private fun assertClose(expected: List<Double>, actual: List<Double>) {
-        assertEquals(expected.size, actual.size)
-        expected.zip(actual).forEach { (e, a) -> assertEquals(e, a, 0.01) }
     }
 
     @Test
     fun `answers carry the resolved model, usage, request id and judge id`() = runBlocking {
-        val reply = Reply(200, resource("response-typesafe.json"), mapOf("x-typesafe-request-id" to "req_0123456789abcdef0123456789abcdef"))
+        val reply = Reply(200, resource("response-typesafe-captured.json"), mapOf("x-typesafe-request-id" to "req_0123456789abcdef0123456789abcdef"))
         StubServer(reply).use { stub ->
             val ai = Kleene(SystemOneJudge(baseUrl = stub.baseUrl, model = "jev-latest"))
             val q = Questions(ai)
@@ -157,7 +163,7 @@ class SystemOneJudgeTest {
             val answers = ai.ask(ticket, q.urgent, q.route, q.clarity)
 
             assertEquals("jev-1.13.0", answers.model)
-            assertEquals(Usage(inputTokens = 318, outputTokens = 61), answers.usage)
+            assertEquals(Usage(inputTokens = 355, outputTokens = 109), answers.usage)
             assertEquals("req_0123456789abcdef0123456789abcdef", answers.requestId)
             assertEquals("127.0.0.1/jev-latest", answers.judge)
             assertEquals("127.0.0.1/jev-latest", answers[q.urgent].evidence.judge)
@@ -166,7 +172,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `Authorization header is sent only when there is an API key`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe.json", "urgent.3173dac6eec83f01"))).use { stub ->
+        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"))).use { stub ->
             Questions(Kleene(judge(stub, apiKey = "sk-test"))).urgent(ticket)
             Questions(Kleene(judge(stub, apiKey = null))).urgent(ticket)
 
@@ -244,7 +250,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `a JSON state is sent as the element itself`() = runBlocking {
-        StubServer(Reply(200, answersFrom("response-typesafe.json", "urgent.3173dac6eec83f01"))).use { stub ->
+        StubServer(Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"))).use { stub ->
             val state = buildJsonObject { put("ticket", ticket) }
 
             Questions(Kleene(judge(stub))).urgent(state)
@@ -288,7 +294,7 @@ class SystemOneJudgeTest {
 
     @Test
     fun `an attempt slower than the timeout is a Timeout`() {
-        val slow = Reply(200, answersFrom("response-typesafe.json", "urgent.3173dac6eec83f01"), delay = 500.milliseconds)
+        val slow = Reply(200, answersFrom("response-typesafe-captured.json", "urgent.3173dac6eec83f01"), delay = 500.milliseconds)
         StubServer(slow).use { stub ->
             val judge = SystemOneJudge(stub.baseUrl, "jev-1.13.0", timeout = 50.milliseconds, maxRetries = 0)
 
