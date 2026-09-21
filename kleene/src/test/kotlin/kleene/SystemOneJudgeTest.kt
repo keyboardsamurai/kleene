@@ -12,6 +12,7 @@ import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -295,7 +296,7 @@ class SystemOneJudgeTest {
     }
 
     @Test
-    fun `cancelling the caller aborts the HTTP exchange`() = runBlocking {
+    fun `cancelling the caller aborts the HTTP exchange`(): Unit = runBlocking {
         ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { server ->
             val received = CountDownLatch(1)
             val closed = CountDownLatch(1)
@@ -320,6 +321,8 @@ class SystemOneJudgeTest {
 
             assertTrue(call.isCancelled)
             assertTrue(closed.await(5, TimeUnit.SECONDS), "the HTTP exchange was not aborted")
+            server.soTimeout = 1_000
+            assertFailsWith<SocketTimeoutException>("a cancelled ask was retried") { server.accept() }
         }
     }
 

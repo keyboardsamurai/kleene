@@ -1,5 +1,6 @@
 package kleene
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -25,7 +26,10 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.pow
+import kotlin.random.Random
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toJavaDuration
 
@@ -37,6 +41,12 @@ import kotlin.time.toJavaDuration
  * It refuses, before sending, what TypeSafe's documented shape does not allow: a choice with fewer than 2 or
  * more than 255 options, a score with fewer than 2 or more than 10 levels ([KleeneException.Unsupported]).
  * [timeout] applies to each attempt. [id] tags the [Evidence] and [Rating] it produces.
+ *
+ * It repeats an attempt up to [maxRetries] times on HTTP 408, 429 and 5xx, a timeout or an I/O error; never on
+ * 400, 401, 403, 422 or a malformed response. Before each retry it waits what the server asks for (`retry-after-ms`,
+ * else `Retry-After` in seconds), else 0.5 s × 2ⁿ capped at 5 s, ± 25% jitter. When no retry is left it throws
+ * the last failure: [KleeneException.RateLimited], [KleeneException.Overloaded] or [KleeneException.Timeout].
+ * Cancelling the caller cancels the attempt or the wait.
  */
 class SystemOneJudge(
     val baseUrl: String,
@@ -52,13 +62,22 @@ class SystemOneJudge(
 
     override suspend fun evaluate(request: Request): Response {
         request.questions.forEach(::refuseUnsupported)
-        return attempt(encode(request))
+        val body = encode(request)
+        var retry = 0
+        while (true) {
+            try {
+                return attempt(body)
+            } catch (failure: Retryable) {
+                if (retry >= maxRetries) throw failure.error
+                delay(failure.wait ?: backoff(retry))
+                retry++
+            }
+        }
     }
 
     /**
-     * One HTTP exchange, no retry. Throws [KleeneException.Timeout] (per-attempt timeout or HTTP 408),
-     * [KleeneException.RateLimited] (429), [KleeneException.Overloaded] (5xx or an I/O error) and the
-     * non-retryable [KleeneException.Authentication], [KleeneException.InvalidRequest] and [KleeneException.Malformed].
+     * One HTTP exchange. Throws [Retryable] for a per-attempt timeout, an I/O error, HTTP 408, 429 or 5xx, and
+     * [KleeneException.Authentication], [KleeneException.InvalidRequest] or [KleeneException.Malformed] otherwise.
      * Cancelling the caller cancels the exchange.
      */
     private suspend fun attempt(body: String): Response {
@@ -71,22 +90,23 @@ class SystemOneJudge(
         val reply = try {
             httpClient.sendAsync(http, HttpResponse.BodyHandlers.ofString()).awaitCancelling()
         } catch (e: HttpTimeoutException) {
-            throw KleeneException.Timeout("$baseUrl did not answer within $timeout", e)
+            throw Retryable(KleeneException.Timeout("$baseUrl did not answer within $timeout", e))
         } catch (e: IOException) {
-            throw KleeneException.Overloaded("$baseUrl could not be reached: $e", status = null, cause = e)
+            throw Retryable(KleeneException.Overloaded("$baseUrl is unreachable: $e", status = null, cause = e))
         }
         if (reply.statusCode() !in 200..299) throw failure(reply)
         return decode(reply.body(), reply.headers().firstValue("x-typesafe-request-id").orElse(null))
     }
 
-    private fun failure(reply: HttpResponse<String>): KleeneException {
+    private fun failure(reply: HttpResponse<String>): Exception {
         val status = reply.statusCode()
         val message = "$baseUrl answered HTTP $status: ${serverMessage(reply.body())}"
+        val wait = retryAfter(reply)
         return when (status) {
             401, 403 -> KleeneException.Authentication(message, status)
-            408 -> KleeneException.Timeout(message)
-            429 -> KleeneException.RateLimited(message, retryAfter = null)
-            in 500..599 -> KleeneException.Overloaded(message, status)
+            408 -> Retryable(KleeneException.Timeout(message), wait)
+            429 -> Retryable(KleeneException.RateLimited(message, retryAfter = wait), wait)
+            in 500..599 -> Retryable(KleeneException.Overloaded(message, status), wait)
             else -> KleeneException.InvalidRequest(message)
         }
     }
@@ -246,3 +266,16 @@ private suspend fun <T> CompletableFuture<T>.awaitCancelling(): T = suspendCance
         else continuation.resumeWithException((error as? CompletionException)?.cause ?: error)
     }
 }
+
+/** A failed attempt worth repeating. [wait] is the delay the server asked for, if any. Never leaves [SystemOneJudge]. */
+private class Retryable(val error: KleeneException, val wait: Duration? = null) : Exception(error.message, error)
+
+/** The delay the server asks for: `retry-after-ms`, else `Retry-After` in seconds. Anything else is no hint. */
+private fun retryAfter(reply: HttpResponse<*>): Duration? {
+    fun header(name: String) = reply.headers().firstValue(name).orElse(null)?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0 }
+    return header("retry-after-ms")?.milliseconds ?: header("retry-after")?.seconds
+}
+
+/** The wait before retry number [retry] (from 0): 0.5 s × 2^[retry], capped at 5 s, scaled by 1 + [jitter]. */
+internal fun backoff(retry: Int, jitter: Double = Random.nextDouble(-0.25, 0.25)): Duration =
+    minOf(0.5 * 2.0.pow(retry), 5.0).seconds * (1 + jitter)

@@ -2,6 +2,7 @@ package kleene
 
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
+import java.util.concurrent.Executors
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration
@@ -16,7 +17,7 @@ data class Received(val method: String, val path: String, val headers: Map<Strin
 
 /**
  * A local System One server on an ephemeral port. Serves [replies] in order (the last one repeats)
- * and records every request it receives.
+ * and records every request as it arrives. Requests are handled concurrently, so a slow reply does not hold back the next.
  */
 class StubServer(vararg replies: Reply) : AutoCloseable {
     private val replies = replies.toList()
@@ -38,6 +39,7 @@ class StubServer(vararg replies: Reply) : AutoCloseable {
             exchange.sendResponseHeaders(reply.status, if (bytes.isEmpty()) -1 else bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
         }
+        executor = Executors.newCachedThreadPool { Thread(it).apply { isDaemon = true } }
         start()
     }
 
