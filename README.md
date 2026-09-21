@@ -1,5 +1,11 @@
 # Kleene
 
+![A model sends its judgment to a Kotlin machine with a Policy dial. The machine emits TRUE, FALSE or UNKNOWN as a typed action, which routes a support ticket to its queue, flags an urgent message, and sends an unclear case to human review.](docs/kleene.jpg)
+
+The model judges, your code decides: the Judge's probabilities go through your `Policy`, and every
+outcome, UNKNOWN included, maps to an action you wrote. An unclear case goes to human review instead
+of a guess.
+
 Typed, three-valued semantic judgments for Kotlin/JVM. You ask a question about some text or JSON, a
 Judge returns probability distributions from model scores, and your application's `Policy` turns them
 into a `Verdict`: TRUE, FALSE or UNKNOWN for `feels`, an accepted option or UNKNOWN for `choose`, and a
