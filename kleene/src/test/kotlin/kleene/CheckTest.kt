@@ -150,7 +150,22 @@ class CheckTest {
 
     @Test
     fun `a failing rule fails the report even when every requirement passes`() = runTest {
-        assertEquals(Outcome.FAIL, reportFor(0.97, 0.9, ruleHolds = false).outcome)
+        val reply by contract {
+            rule("Mentions a ticket number") { false }
+            +"Says the upload failed"
+            +"Tells the user to retry"
+        }
+        val judge = ScriptedJudge {
+            feels("reply.1", 0.97)
+            feels("reply.2", 0.9)
+        }
+
+        val report = Kleene(judge).check(output, reply)
+
+        judge.requests.single()
+        assertEquals(listOf(Outcome.FAIL, Outcome.PASS, Outcome.PASS), report.results.map { it.outcome })
+        assertTrue(report.results.drop(1).all { it.evidence != null })
+        assertEquals(Outcome.FAIL, report.outcome)
     }
 
     @Test
@@ -255,11 +270,11 @@ class CheckTest {
         assertEquals(expected, Json.parseToJsonElement(report.toJson()))
     }
 
-    private suspend fun reportFor(failed: Double, retry: Double, ruleHolds: Boolean = true): Report {
+    private suspend fun reportFor(failed: Double, retry: Double): Report {
         val reply by contract {
             +"Says the upload failed"
             +"Tells the user to retry"
-            rule("Fits the error banner") { ruleHolds }
+            rule("Fits the error banner") { true }
         }
         val judge = ScriptedJudge {
             feels("reply.1", failed)
