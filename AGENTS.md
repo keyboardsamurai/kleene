@@ -34,6 +34,7 @@ mvn test                                        # unit tests; `live` tag exclude
 mvn test -pl kleene -Dtest=EvidenceTest#name    # single test
 KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=... mvn test -Dgroups=live   # live smoke tests
 scripts/kev.sh                                  # start a local Kev judge on :8009
+scripts/laya.sh                                 # start a local Laya judge on :8010 (Apple Silicon)
 mvn -q -pl demo exec:java -Dexec.args="..."     # run a demo (after mvn -q -DskipTests install); see demo/README.md
 ```
 
@@ -45,7 +46,7 @@ The pipeline is **Question → ask → Judge → validate → Evidence → Polic
 - **One `ask` makes exactly one `Judge.evaluate` call.** Reading `Answers`, `Verdict`, `Evidence`, or `Rating` never calls a model. `Verdict.at(policy)` reapplies a Policy with zero model calls.
 - `Judge` is a `fun interface` SPI: `Request(state, wireQuestions) → Response(raw distributions)`. Core validates every Response after any Judge and before building `Answers`. Validation checks ids, kinds, finiteness, [0,1], label sets, the sum tolerance `0.006×K`, and for score the expected-level tolerance `0.006×(1+K(K−1)/2)` (ADR-0003). Any violation throws `Malformed`, and core never repairs a response.
 - `Evidence` stores probabilities exactly as received (never renormalized). `Evidence.decide(policy)` is the only place thresholds apply. `Rating` (score) has no policy; the caller's comparison acts as the policy.
-- `SystemOneJudge` is the single HTTP adapter (`POST {baseUrl}/v1/systemone`). The same adapter serves cloud TypeSafe and local Kev/openjev, configured by three env vars. It owns the retry and backoff policy. There is no fallback from a local URL to the cloud.
+- `SystemOneJudge` is the single HTTP adapter (`POST {baseUrl}/v1/systemone`). The same adapter serves cloud TypeSafe and local Kev, openjev or Laya (via laya-server), configured by three env vars. It owns the retry and backoff policy. There is no fallback from a local URL to the cloud.
 - `ScriptedJudge` ships in the main artifact for tests. It matches questions by name and records `requests` so tests can assert the one-ask-one-request rule.
 - `check(output, contract)` runs every deterministic `Rule` and then sends all requirements as `feels` questions in one ask. It returns a per-requirement `Report` (aggregate order: FAIL > UNKNOWN > PASS) and never modifies the output.
 

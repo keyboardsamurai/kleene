@@ -41,9 +41,9 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toKotlinDuration
 
 /**
- * The [Judge] for any System One server: cloud TypeSafe (`https://api.typesafe.ai`) or a local Kev/openjev
- * (`http://127.0.0.1:8009`). One ask is one `POST {baseUrl}/v1/systemone`. It never falls back from one server
- * to another.
+ * The [Judge] for any System One server: cloud TypeSafe (`https://api.typesafe.ai`) or a local Kev
+ * (`http://127.0.0.1:8009`), Laya (`http://127.0.0.1:8010`) or openjev. One ask is one
+ * `POST {baseUrl}/v1/systemone`. It never falls back from one server to another.
  *
  * It refuses, before sending, what TypeSafe's documented shape does not allow: a choice with fewer than 2 or
  * more than 255 options, a score with fewer than 2 or more than 10 levels ([KleeneException.Unsupported]).

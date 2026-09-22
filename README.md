@@ -129,6 +129,16 @@ you cannot compare it across judges.
 For a local [Kev](https://github.com/jaredpalmer/kev) judge, run `scripts/kev.sh` inside a Kev checkout
 and set `KLEENE_BASE_URL=http://127.0.0.1:8009`. There is no fallback from a local URL to the cloud.
 
+On Apple Silicon, `scripts/laya.sh` starts a [Laya](https://pypi.org/project/laya-mlx/) judge behind
+[laya-server](https://github.com/phaser/laya-server). It needs `uv` but no checkout; the first start downloads about
+680 MB of model files, plus Python 3.11 and the packages if uv has not cached them.
+Set `KLEENE_BASE_URL=http://127.0.0.1:8010` and `KLEENE_MODEL=laya-mlx`. Laya is wire-compatible but untested
+([ADR-0006](docs/adr/0006-laya-runs-behind-a-third-party-bridge.md)): its default multilingual checkpoint reads at
+most 1024 tokens of state, instructions and options, drops the rest without an error, and is not calibrated. In
+the demo it was wrong on most cells it decided ([demo/README.md](demo/README.md#laya)), so don't use it for `check`
+without your own evaluation. The two uvicorn warnings the server logs for each request (`Unsupported upgrade request.` and `No supported WebSocket
+library detected`) are harmless: they come from the HTTP/2 upgrade header that `java.net.http.HttpClient` sends.
+
 ## Check an output against a contract
 
 ```kotlin
@@ -182,6 +192,7 @@ val judge = ScriptedJudge { feels("urgent", 0.93) }
 ```sh
 mvn test                                                                          # unit tests; live excluded
 KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=kev-4b mvn test -Dgroups=live # live smoke tests
+KLEENE_BASE_URL=http://127.0.0.1:8010 KLEENE_MODEL=laya-mlx mvn test -Dgroups=live # same, against Laya
 ```
 
 ## Errors vs UNKNOWN

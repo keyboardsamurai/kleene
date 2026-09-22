@@ -70,6 +70,18 @@ export KLEENE_BASE_URL=http://127.0.0.1:8009
 export KLEENE_MODEL=kev-4b
 ```
 
+or a local Laya (`scripts/laya.sh` starts one on `:8010`, Apple Silicon only):
+
+```sh
+export KLEENE_BASE_URL=http://127.0.0.1:8010
+export KLEENE_MODEL=laya-mlx
+```
+
+Laya runs this demo, but its verdicts are mostly wrong: see [Laya](#laya) under A real run. It
+reads at most 1024 tokens of state, instructions and options and drops the rest without an error,
+so it never answers 422 and the hint under Long documents never fires. `--chunk` makes it worse,
+not better.
+
 Then, from `demo/` (outputs land under `demo/out/`, gitignored):
 
 ```sh
@@ -206,6 +218,35 @@ instability is a property of the small local judge, not of the document.
 Read the decided `Truth` across judges, never the probabilities: `p(true)` and `confidence` come
 from different models and are not comparable. `Evidence.judge` records which judge produced each
 cell for exactly this reason.
+
+### Laya
+
+The same 59 versions through a local Laya (`scripts/laya.sh`, `laya-mlx` 0.2.0) on 2026-09-22, on
+both checkpoints, whole and chunked to fit the context. Decided / wrong over the same 236 cells:
+
+| acceptAt | kev | jev | laya multilingual | multilingual `--chunk 2000` | laya English | English `--chunk 1000` |
+|---|---|---|---|---|---|---|
+| 0.95 | 26/0 | 0/0 | 227/169 | 230/172 | 0/0 | 33/29 |
+| 0.85 | 57/0 | 203/0 | 232/172 | 232/172 | 56/56 | 116/110 |
+| 0.75 | 85/1 | 233/0 | 234/174 | 234/174 | 120/117 | 197/164 |
+| 0.60 | 175/16 | 233/0 | 235/175 | 235/175 | 192/175 | 232/168 |
+
+Laya is wrong on most cells it decides, on both checkpoints: at 0.85, 172 of 232 (multilingual) and
+56 of 56 (English). Nearly every error is TRUE on a promise the document does not make. The
+multilingual checkpoint says TRUE to almost everything, with a median `p(true)` of about 0.97 on all
+four requirements. Its TRUEs on deletion are not evidence either: whole, it reads only the first
+4.6k of 14.8k characters, and the deletion text starts at 12.9k.
+
+Chunking does not help. A cell is TRUE when any chunk is TRUE, so false TRUEs add up: on the
+English checkpoint, chunks double the errors at 0.85. The fault is in the ranking, not the
+calibration: on intact versions, the real promise scores above a silent one with probability 0.76
+(multilingual) and 0.001 (English), against 1.00 for Kev and Jev. A question-form instruction or
+true/false criteria did not fix it. Both checkpoints also score TRUE on short probe texts that break
+a promise in paraphrase, and the multilingual one even when the text breaks it outright.
+
+The wire is sound: all 236 Laya records parsed with no `Malformed`. Laya stays wire-compatible,
+untested ([ADR-0006](../docs/adr/0006-laya-runs-behind-a-third-party-bridge.md)). Do not use it for
+`check` without your own labelled evaluation.
 
 ### What this does and does not establish
 

@@ -17,7 +17,7 @@ Ship order: **1 Core → 3 Local judges → 2 Check**. All three ship. Sections 
 | Platform | JVM only, JDK 17, Kotlin 2.x |
 | Deps | `kotlinx-coroutines-core`, `kotlinx-serialization-json`. HTTP via `java.net.http.HttpClient`. Nothing else at runtime. Applies to `kleene`; `demo` may add its own (ADR-0005). |
 | Tests | JUnit 5 + `kotlin-test`. Live tests tagged `live`, excluded from default `mvn test`. |
-| Not in v1 | Writer adapters, `write().satisfy()`, record/replay, `inspect{}`, `partition`, debugger, toml/profiles/lockfile, `doctor`, compat report, `describe()`, Python bridges (Laya/SemIf), `kleene serve`, blocking facade, KMP. |
+| Not in v1 | Writer adapters, `write().satisfy()`, record/replay, `inspect{}`, `partition`, debugger, toml/profiles/lockfile, `doctor`, compat report, `describe()`, Kleene-shipped Python bridges (Laya/SemIf), `kleene serve`, blocking facade, KMP. |
 
 ---
 
@@ -306,8 +306,9 @@ Stricter servers answer 422 → `InvalidRequest` with the server message. No per
 | Tested | TypeSafe `api.typesafe.ai`, model `jev-1.13.0` | pin version; `jev-latest` moves |
 | Tested | [Kev](https://github.com/jaredpalmer/kev) `127.0.0.1:8009` | Apache-2.0; Mac MPS; 2-dp rounding; `model` echoed verbatim; own confidence formulas: choice `(p_max−1/K)/(1−1/K)`, score `1 − E\|i−mode\|/(L−1)` |
 | Wire-compatible, untested | [razorback16/openjev](https://github.com/razorback16/openjev) | model must be in `{openjev-latest, openjev-0.1, jev-latest, jev-preview}`; choice ≤128; response model always `openjev-0.1` |
+| Wire-compatible, untested | [laya-mlx](https://pypi.org/project/laya-mlx/) via [phaser/laya-server](https://github.com/phaser/laya-server)@`ad2b426` `127.0.0.1:8010` | ADR-0006; demo verdicts mostly wrong on both checkpoints (`demo/README.md`); Apple Silicon; model must be `laya-mlx`, the checkpoint id or in `{jev-latest, jev-preview, jev-1.13.0}`; response model always `laya-mlx`; state + instructions + options share 1024 tokens (512 on the English checkpoint), excess dropped silently; multilingual checkpoint uncalibrated (temperature 1, every kind); English checkpoint: choice with 11+ options uncalibrated; ≤128 questions per request; one inference at a time; non-`ValueError` inference failure → 500 → `Overloaded` |
 | Omitted | openjev-sglang | no license file; CUDA only |
-| Omitted | Laya, SemIf | no HTTP server; bridge is future work |
+| Omitted | SemIf | no HTTP server |
 
 Confidence values are never comparable across tiers; `Evidence.judge` tags them.
 
@@ -317,6 +318,8 @@ Confidence values are never comparable across tiers; `Evidence.judge` tags them.
 - `@Tag("live")` smoke test per tier, runs only when `KLEENE_BASE_URL` + `KLEENE_MODEL` set; excluded from default surefire.
 - `scripts/kev.sh`: one-line Kev start, run from a Kev checkout after `uv sync --extra serve`:
   `KEV_DTYPE=bf16 uv run --extra serve python -m kev.serve --run jaredpalmer/kev-4b --port 8009`.
+- `scripts/laya.sh`: one-line Laya start, no checkout needed, Apple Silicon and macOS 14+; `LAYA_MODEL` overrides the checkpoint:
+  `uvx --python 3.11 --with 'laya-mlx==0.2.0' --from 'git+https://github.com/phaser/laya-server@ad2b426' laya-server --host 127.0.0.1 --port 8010 --model aac6fef/laya-multilingual-mlx`.
 
 ---
 
