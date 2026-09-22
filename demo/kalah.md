@@ -179,4 +179,74 @@ One JSON line per position per run. Every probability is stored as received:
 
 ## Results
 
-TODO: fill in from a real run (Jev, Kev-4B, Laya multilingual, Laya English).
+200 positions (`--seed 1`), engine depth 12, logged on 2026-09-22 through four judges: cloud TypeSafe
+(`jev-1.13.0`), a local Kev (`kev-4b`, bf16) and a local Laya (`laya-mlx` 0.2.0 via laya-server) on its
+multilingual and English checkpoints. Kev and Laya ran on one Mac. Each run made 200 model calls, one per
+position, with no error and no retry. `rank` and `html` after that made none, and two `rank` runs printed the same
+output. At load, the English checkpoint warned that it clamps the temperature of its choice bucket for 11 or more
+options. No question here has more than 6 options.
+
+| | `jev-1.13.0` | `kev-4b` | Laya multilingual | Laya English |
+|---|---|---|---|---|
+| wall clock, 200 positions | about 57 seconds | about 44 minutes | about 25 seconds | about 105 seconds |
+
+### Leaderboard
+
+| run | n | best move | regret | illegal mass | lead MAE | moves decided/wrong/illegal at 0.85 | again/takes decided/wrong at 0.85 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| jev | 200 | 25% | 5.97 | 0.06 | 1.00 | 0/0/0 | 879/31 |
+| kev-4b | 200 | 25% | 5.54 | 0.25 | 1.19 | 0/0/0 | 4/4 |
+| laya-multilingual | 200 | 26% | 5.70 | 0.26 | 1.59 | 0/0/0 | 2196/2020 |
+| laya-english | 200 | 27% | 5.53 | 0.25 | 1.50 | 22/19/5 | 1025/914 |
+| baseline: random | 200 | 30% | 5.11 | 0.00 | – | – | – |
+| baseline: greedy | 200 | 41% | 3.97 | 0.00 | – | – | – |
+| baseline: always even | 200 | – | – | – | 1.39 | – | – |
+| baseline: stores only | 200 | – | – | – | 1.03 | – | – |
+| baseline: always FALSE | 200 | – | – | – | – | – | 2400/191 |
+
+| acceptAt | jev moves | jev again/takes | kev-4b moves | kev-4b again/takes | laya-multilingual moves | laya-multilingual again/takes | laya-english moves | laya-english again/takes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.95 | 0/0/0 | 251/0 | 0/0/0 | 0/0 | 0/0/0 | 408/376 | 8/5/0 | 47/42 |
+| 0.85 | 0/0/0 | 879/31 | 0/0/0 | 4/4 | 0/0/0 | 2196/2020 | 22/19/5 | 1025/914 |
+| 0.75 | 5/4/0 | 1324/98 | 0/0/0 | 286/268 | 0/0/0 | 2375/2186 | 45/38/10 | 1622/1388 |
+| 0.60 | 48/35/0 | 1917/236 | 2/2/0 | 1661/1516 | 1/1/1 | 2397/2206 | 72/58/17 | 2110/1719 |
+
+Three cells sit on a rounding tie: 27% is 53 of 200, 41% is 81 of 200 and 1.19 is 1.195. A separate Python
+recount from the data in `kalah.html` gave the same counts, and a separate Python depth-12 search gave the same
+engine values on all 200 boards.
+
+### Findings
+
+1. **No judge reads the board for the move.** Best move is 50 to 53 of 200 (25% to 27%) and regret is 5.53 to
+   5.97 seeds for every judge. That is worse than `random` (30%, 5.11) and far from `greedy` (41%, 3.97). Per
+   position, the rank correlation between p(pit) and the engine value of the legal pits is −0.07 to 0.01 on
+   average. Each judge puts slightly less p on the best pit than on the mean legal pit.
+2. **At 0.85, three judges abstain on every move; one is confidently wrong.** Jev, Kev and Laya multilingual
+   decide 0 of 200 moves (mean top p 0.48, 0.33 and 0.32). Laya English decides 22 and 19 of them are wrong,
+   5 of them an empty pit. At 0.60, Jev decides 48 moves and 35 are wrong.
+3. **Only Jev sees the empty pits.** Its illegal mass is 0.06 and its top pit is never empty. Kev and both Laya
+   checkpoints put 0.25 to 0.26 on empty pits, the same as the share of empty pits (0.253), and their top pit is
+   empty in 52 to 54 of 200 positions.
+4. **No judge knows the sowing rule for again/takes.** Only 191 of 2400 cells are TRUE, so `always FALSE` is
+   right on 92.0%. On legal pits, every judge ranks TRUE above FALSE close to chance (AUC 0.41 to 0.57). At 0.85,
+   Jev says FALSE on 879 cells, is right on 96.5% and accepts 0 of the 191 TRUE cells. 525 of its 879 FALSEs are
+   on empty pits, where the rules give the answer.
+5. **Kev abstains, Laya says TRUE.** At 0.85, Kev decides 4 of 2400 cells and all 4 are wrong. At 0.60 it decides
+   1661 and 1516 are wrong. Laya multilingual has a mean p(true) of about 0.91 on TRUE and FALSE cells alike: it
+   accepts 176 of the 191 TRUE cells but is wrong on 2020 of 2196. Laya English is wrong on 914 of 1025.
+6. **For lead, Jev reads the stores, not the play.** Its lead MAE is 1.00, against 1.03 for `stores only` and
+   1.39 for `always even`. Its expected level correlates 0.90 with the stores bucket and 0.51 with the engine
+   bucket. Kev (1.19) beats `always even` but not `stores only`. Both Laya checkpoints lose to both baselines
+   (1.59 and 1.50). Laya multilingual answers `behind` on all 200 positions.
+
+### What this does and does not establish
+
+This is 200 positions from one seed and one prompt wording: the `RULES` text and 14 fixed instructions. Another
+wording or a state that spells out each sowing could change any row. `best` and `lead` come from a depth-12 engine,
+exact only when the game ends inside the horizon. A deeper judge could be right and still count as wrong, but no
+judge here beat `random`, so the horizon is not what limits these scores. `againN` and `takesN` are exact. Do not
+compare the probabilities across judges: p, mean top p and AUC come from different models. The decided `Truth` at
+one `acceptAt` is comparable. The run shows that these four judges, with this prompt, do not simulate a Kalah
+sowing. It also shows the UNKNOWN band at work, and its limit: at 0.85, Jev, Kev and Laya multilingual left all 200
+moves UNKNOWN, Laya English made 19 wrong moves, and on again/takes the band did not stop Laya multilingual from
+2020 wrong TRUEs.
