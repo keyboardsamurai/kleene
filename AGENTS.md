@@ -35,7 +35,7 @@ mvn test -pl kleene -Dtest=EvidenceTest#name    # single test
 KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=... mvn test -Dgroups=live   # live smoke tests
 scripts/kev.sh                                  # start a local Kev judge on :8009
 scripts/laya.sh                                 # start a local Laya judge on :8010 (Apple Silicon)
-mvn -q -pl demo exec:java -Dexec.args="..."     # run a demo (after mvn -q -DskipTests install); see demo/README.md
+mvn -q -pl demo exec:java -Dexec.args="..."     # run a demo (after mvn -q -DskipTests install); see demo/README.md, demo/kalah.md
 ```
 
 ## Architecture

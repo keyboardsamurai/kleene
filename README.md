@@ -208,6 +208,8 @@ Runnable demo programs live in the `demo` module (never published; see
 The first demo, `kleene.demo.promises`, checks a `Contract` of user promises over every git
 version of a real terms-of-service document and reapplies the accept threshold at zero model
 calls. See [`demo/README.md`](demo/README.md).
+The second demo, `kleene.demo.kalah`, scores judges against each other on Kalah positions, with an engine as
+the truth for every question. See [`demo/kalah.md`](demo/kalah.md).
 
 ## Inspiration
 

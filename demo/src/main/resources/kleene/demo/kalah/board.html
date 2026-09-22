@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kalah bench</title>
+<style>
+  body { font-family: sans-serif; margin: 1.5rem; color: #222; }
+  pre { background: #f6f6f6; padding: 0.75rem; overflow-x: auto; font-size: 0.75rem; }
+  .controls { margin: 1rem 0 0.5rem; }
+  #summary { margin-bottom: 1rem; color: #555; }
+  #cards { display: flex; flex-wrap: wrap; gap: 1rem; }
+  .card { border: 1px solid #ccc; padding: 0.5rem 0.75rem; }
+  .card h3 { margin: 0 0 0.4rem; font-size: 0.9rem; font-weight: normal; color: #555; }
+  .board { display: grid; grid-template-columns: 3rem repeat(6, 3.2rem) 3rem; gap: 3px; align-items: center; text-align: center; }
+  .pit { border: 1px solid #999; border-radius: 50%; height: 2.6rem; line-height: 2.6rem; font-weight: bold; }
+  .theirs { background: #eee; color: #555; }
+  .store { border: 1px solid #999; border-radius: 1rem; height: 5.5rem; line-height: 5.5rem; font-weight: bold; background: #f3efe6; }
+  .bar { height: 2.5rem; display: flex; align-items: flex-end; justify-content: center; }
+  .bar div { width: 1.2rem; background: #1565c0; }
+  .small { font-size: 0.75rem; }
+  .feels { font-size: 0.9rem; font-weight: bold; }
+  .line { margin-top: 0.35rem; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>Kalah bench</h1>
+<pre id="leaderboard"></pre>
+<div class="controls">
+  <select id="runSelect" aria-label="run"></select>
+  <label for="acceptAt">acceptAt</label>
+  <input type="range" id="acceptAt" min="0.51" max="1.00" step="0.01" value="0.85">
+  <span id="acceptAtValue">0.85</span>
+</div>
+<div id="summary"></div>
+<div id="cards"></div>
+<script>
+const data = /*DATA*/;
+let selected = 0;
+const UNKNOWN = "UNKNOWN";
+
+// Mirrors kleene.Evidence.decide for choose: the first pit with the top p is accepted when p >= t, else UNKNOWN.
+function decideMove(move, t) {
+    const top = Math.max(...move);
+    return top >= t ? move.indexOf(top) : UNKNOWN;
+}
+
+// Mirrors kleene.Evidence.decide for feels: p >= t is TRUE, p <= falseAt is FALSE, else UNKNOWN. Policy
+// mirrors falseAt = 1 - t in decimal; the slider moves in cents, so rounding to cents gives the same number.
+function decideFeels(p, t) {
+    const falseAt = Math.round((1 - t) * 100) / 100;
+    if (p >= t) return true;
+    if (p <= falseAt) return false;
+    return UNKNOWN;
+}
+
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+function place(node, column, row, rowSpan) {
+    node.style.gridColumn = String(column);
+    node.style.gridRow = rowSpan ? `${row} / span ${rowSpan}` : String(row);
+    return node;
+}
+
+const GREEN = "#2e7d32", RED = "#c62828", GREY = "#9e9e9e";
+
+function factsOf(record) {
+    return data.facts[record.board.join(",")];
+}
+
+function top(facts) {
+    return Math.max(...Object.values(facts.values));
+}
+
+function signed(value) {
+    return value > 0 ? `+${value}` : String(value);
+}
+
+// T or F at t, green when it matches the engine, red when not; ? in grey for UNKNOWN.
+function feelsCell(p, truth, t) {
+    const said = decideFeels(p, t);
+    const cell = el("div", "feels", said === UNKNOWN ? "?" : said ? "T" : "F");
+    cell.style.color = said === UNKNOWN ? GREY : said === truth ? GREEN : RED;
+    cell.title = `p(true) = ${p}, engine: ${truth}`;
+    return cell;
+}
+
+function moveLine(record, facts, t) {
+    const pit = decideMove(record.move, t);
+    const line = el("div", "line");
+    if (pit === UNKNOWN) {
+        line.textContent = `move: UNKNOWN, top p ${Math.max(...record.move).toFixed(2)} < ${t.toFixed(2)}`;
+        line.style.color = GREY;
+    } else if (!facts.legal.includes(pit)) {
+        line.textContent = `move: pit ${pit + 1}, illegal (empty)`;
+        line.style.color = RED;
+    } else if (facts.best.includes(pit)) {
+        line.textContent = `move: pit ${pit + 1}, best`;
+        line.style.color = GREEN;
+    } else {
+        line.textContent = `move: pit ${pit + 1}, loses ${top(facts) - facts.values[pit]} seeds`;
+        line.style.color = RED;
+    }
+    return line;
+}
+
+function leadLine(record, facts) {
+    const said = data.levels[Math.round(record.leadExpected)];
+    return el("div", "line", `lead: judge ${record.leadExpected.toFixed(2)} (${said}), engine ${data.levels[facts.lead]}`);
+}
+
+function card(record, t) {
+    const facts = factsOf(record);
+    const b = record.board;
+    const node = el("div", "card");
+    node.appendChild(el("h3", "", `position ${record.position}`));
+    const grid = el("div", "board");
+    const theirStore = place(el("div", "store theirs", b[13]), 1, 1, 2);
+    theirStore.title = "opponent store";
+    const yourStore = place(el("div", "store", b[6]), 8, 1, 2);
+    yourStore.title = "your store";
+    grid.append(theirStore, yourStore);
+    grid.appendChild(place(el("div", "small", "p(pit)"), 1, 3));
+    grid.appendChild(place(el("div", "small", "again"), 1, 5));
+    grid.appendChild(place(el("div", "small", "takes"), 1, 6));
+    for (let i = 0; i < 6; i++) {
+        const column = i + 2;
+        // Opponent row on top: the pit opposite your pit i + 1 is board[12 - i].
+        grid.appendChild(place(el("div", "pit theirs", b[12 - i]), column, 1));
+        const pit = place(el("div", "pit", b[i]), column, 2);
+        pit.title = `your pit ${i + 1}`;
+        grid.appendChild(pit);
+        const bar = place(el("div", "bar"), column, 3);
+        const fill = el("div");
+        fill.style.height = `${Math.round(record.move[i] * 100)}%`;
+        bar.title = `p(pit ${i + 1}) = ${record.move[i]}`;
+        bar.appendChild(fill);
+        grid.appendChild(bar);
+        const legal = facts.legal.includes(i);
+        const mark = legal ? `${facts.best.includes(i) ? "★" : ""}${signed(facts.values[i])}` : "✗";
+        const note = place(el("div", "small", `${record.move[i].toFixed(2)} ${mark}`), column, 4);
+        note.title = legal ? `engine value ${signed(facts.values[i])} seeds` : "empty pit";
+        grid.appendChild(note);
+        grid.appendChild(place(feelsCell(record.again[i], facts.again[i], t), column, 5));
+        grid.appendChild(place(feelsCell(record.takes[i], facts.takes[i], t), column, 6));
+    }
+    node.append(grid, moveLine(record, facts, t), leadLine(record, facts));
+    return node;
+}
+
+// The same counts as the leaderboard's table per acceptAt, for the selected run at the slider's acceptAt.
+function summary(records, t) {
+    let moves = 0, wrongMoves = 0, illegal = 0, feels = 0, wrongFeels = 0;
+    for (const record of records) {
+        const facts = factsOf(record);
+        const pit = decideMove(record.move, t);
+        if (pit !== UNKNOWN) {
+            moves++;
+            if (!facts.best.includes(pit)) wrongMoves++;
+            if (!facts.legal.includes(pit)) illegal++;
+        }
+        for (let i = 0; i < 6; i++) {
+            for (const [p, truth] of [[record.again[i], facts.again[i]], [record.takes[i], facts.takes[i]]]) {
+                const said = decideFeels(p, t);
+                if (said === UNKNOWN) continue;
+                feels++;
+                if (said !== truth) wrongFeels++;
+            }
+        }
+    }
+    const n = records.length;
+    return `moves decided ${moves} of ${n}, wrong ${wrongMoves}, illegal ${illegal} · ` +
+        `again/takes decided ${feels} of ${12 * n}, wrong ${wrongFeels} · model calls: 0`;
+}
+
+function currentAcceptAt() {
+    return parseFloat(document.getElementById("acceptAt").value);
+}
+
+function render() {
+    const t = currentAcceptAt();
+    document.getElementById("acceptAtValue").textContent = t.toFixed(2);
+    const records = data.runs[selected].records;
+    document.getElementById("summary").textContent = summary(records, t);
+    const cards = document.getElementById("cards");
+    cards.replaceChildren(...records.map((record) => card(record, t)));
+}
+
+function init() {
+    document.getElementById("leaderboard").textContent = data.leaderboard;
+    const select = document.getElementById("runSelect");
+    data.runs.forEach((run, i) => {
+        const option = el("option", "", run.label);
+        option.value = String(i);
+        select.appendChild(option);
+    });
+    select.addEventListener("change", () => {
+        selected = parseInt(select.value, 10);
+        render();
+    });
+    document.getElementById("acceptAt").addEventListener("input", render);
+    render();
+}
+init();
+</script>
+</body>
+</html>
