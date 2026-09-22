@@ -5,3 +5,4 @@ target/
 .idea/
 .junie/
 /.env
+/demo/out/

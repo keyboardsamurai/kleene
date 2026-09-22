@@ -20,6 +20,7 @@
 
     <modules>
         <module>kleene</module>
+        <module>demo</module>
     </modules>
 
     <properties>

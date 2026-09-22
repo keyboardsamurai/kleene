@@ -21,9 +21,9 @@ v1 is implemented (Maven build, `kleene` module, tests). Source of truth, in pri
 
 ## Fixed constraints
 
-- Maven only, never Gradle. Parent pom plus one child module `kleene`. Coordinates `com.antonioagudo.libs:kleene`, package `kleene`.
+- Maven only, never Gradle. Parent pom plus the library module `kleene` and the unpublished `demo` module (ADR-0005). Coordinates `com.antonioagudo.libs:kleene`, package `kleene`.
 - MIT license. Never add Apache headers.
-- JVM only, JDK 17, Kotlin 2.x. Runtime deps are limited to `kotlinx-coroutines-core` and `kotlinx-serialization-json`. HTTP goes through `java.net.http.HttpClient` (no Ktor or OkHttp).
+- JVM only, JDK 17, Kotlin 2.x. In `kleene`, runtime deps are limited to `kotlinx-coroutines-core` and `kotlinx-serialization-json`. HTTP goes through `java.net.http.HttpClient` (no Ktor or OkHttp).
 - Tests use JUnit 5 and `kotlin-test`. Live tests are tagged `live` and excluded from default surefire.
 - Ship order: **1 Core → 3 Local judges (SystemOneJudge) → 2 Check**. Spec sections follow this order.
 - Spec §0 lists what is out of v1. Don't build it.
@@ -35,6 +35,7 @@ mvn test                                        # unit tests; `live` tag exclude
 mvn test -pl kleene -Dtest=EvidenceTest#name    # single test
 KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=... mvn test -Dgroups=live   # live smoke tests
 scripts/kev.sh                                  # start a local Kev judge on :8009
+mvn -q -pl demo exec:java -Dexec.args="..."     # run a demo (after mvn -q -DskipTests install); see demo/README.md
 ```
 
 ## Architecture
@@ -42,7 +43,7 @@ scripts/kev.sh                                  # start a local Kev judge on :80
 The pipeline is **Question → ask → Judge → validate → Evidence → Policy → Verdict/Rating**.
 
 - `Kleene(judge, policy)` is the only runtime and holds no global state. `feels`/`choose`/`score` build `Question`s bound to that `Kleene`. A Question takes its `name` from the delegated property (`val urgent by ai.feels(...)`). The wire id is `name.sha256(kind, instructions, labels)[:16]`, so renaming an option label creates a new question.
-- **One `ask` makes exactly one `Judge.evaluate` call.** Reading `Answers`, `Verdict`, `Evidence`, or `Rating` never calls a model. `Verdict.at(policy)` (reapply) re-decides with zero model calls.
+- **One `ask` makes exactly one `Judge.evaluate` call.** Reading `Answers`, `Verdict`, `Evidence`, or `Rating` never calls a model. `Verdict.at(policy)` reapplies a Policy with zero model calls.
 - `Judge` is a `fun interface` SPI: `Request(state, wireQuestions) → Response(raw distributions)`. Core validates every Response after any Judge and before building `Answers`. Validation checks ids, kinds, finiteness, [0,1], label sets, the sum tolerance `0.006×K`, and for score the expected-level tolerance `0.006×(1+K(K−1)/2)` (ADR-0003). Any violation throws `Malformed`, and core never repairs a response.
 - `Evidence` stores probabilities exactly as received (never renormalized). `Evidence.decide(policy)` is the only place thresholds apply. `Rating` (score) has no policy; the caller's comparison acts as the policy.
 - `SystemOneJudge` is the single HTTP adapter (`POST {baseUrl}/v1/systemone`). The same adapter serves cloud TypeSafe and local Kev/openjev, configured by three env vars. It owns the retry and backoff policy. There is no fallback from a local URL to the cloud.

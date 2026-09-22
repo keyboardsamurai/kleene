@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Promise tests</title>
+<style>
+  body { font-family: sans-serif; margin: 1.5rem; color: #222; }
+  .controls { margin-bottom: 1rem; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #ccc; padding: 4px 10px; text-align: center; font-size: 0.9rem; }
+  td:first-child, th:first-child { text-align: left; font-weight: bold; }
+  td.cell { cursor: pointer; font-weight: bold; }
+  #footer { margin-top: 0.5rem; color: #555; }
+  #detail { margin-top: 1rem; padding: 0.75rem; border: 1px solid #ccc; min-height: 3rem; max-width: 40rem; }
+</style>
+</head>
+<body>
+<h1>Promise tests</h1>
+<div class="controls">
+  <label for="acceptAt">acceptAt</label>
+  <input type="range" id="acceptAt" min="0.50" max="1.00" step="0.01" value="0.85">
+  <select id="judgeSelect" aria-label="judge"></select>
+</div>
+<table id="grid"></table>
+<div id="footer">model calls: 0 &middot; acceptAt <span id="acceptAtValue">0.85</span></div>
+<div id="detail">Click a cell for details.</div>
+<script>
+const data = /*DATA*/;
+const records = data.records;
+const judges = [...new Set(records.map((r) => r.judge))];
+const byCommit = new Map();
+for (const r of records) {
+    if (!byCommit.has(r.commit)) byCommit.set(r.commit, {});
+    byCommit.get(r.commit)[r.judge] = r;
+}
+let selectedJudge = judges[0];
+
+// Mirrors kleene.demo.promises.decide: per chunk, p >= t is TRUE, p <= 1 - t is FALSE, else UNKNOWN;
+// chunks fold with K3 or (FALSE is the identity element).
+function decideChunk(p, t) {
+    if (p >= t) return "TRUE";
+    if (p <= 1 - t) return "FALSE";
+    return "UNKNOWN";
+}
+function orTruth(a, b) {
+    if (a === "TRUE" || b === "TRUE") return "TRUE";
+    if (a === "FALSE" && b === "FALSE") return "FALSE";
+    return "UNKNOWN";
+}
+function decide(pTrueList, t) {
+    return pTrueList.map((p) => decideChunk(p, t)).reduce(orTruth, "FALSE");
+}
+
+const GLYPH = { TRUE: "✓", FALSE: "✗", UNKNOWN: "?" };
+const COLOR = { TRUE: "#2e7d32", FALSE: "#c62828", UNKNOWN: "#9e9e9e" };
+
+function versionsFor(judge) {
+    return records.filter((r) => r.judge === judge).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function ruleTruth(record, label) {
+    return record.rules.find((r) => r.label === label).outcome === "PASS" ? "TRUE" : "FALSE";
+}
+
+function requirementTruth(record, label, t) {
+    return decide(record.requirements.find((r) => r.label === label).pTrue, t);
+}
+
+function disagrees(commit, label, isRule, t) {
+    if (judges.length < 2) return false;
+    const perJudge = byCommit.get(commit) || {};
+    const truths = judges
+        .map((j) => perJudge[j])
+        .filter((r) => r)
+        .map((r) => (isRule ? ruleTruth(r, label) : requirementTruth(r, label, t)));
+    return new Set(truths).size > 1;
+}
+
+function currentAcceptAt() {
+    return parseFloat(document.getElementById("acceptAt").value);
+}
+
+function addRow(table, label, versions, isRule, t) {
+    const row = table.insertRow();
+    row.insertCell().textContent = label;
+    let previous = null;
+    versions.forEach((v, i) => {
+        const truth = isRule ? ruleTruth(v, label) : requirementTruth(v, label, t);
+        const cell = row.insertCell();
+        cell.className = "cell";
+        cell.textContent = GLYPH[truth];
+        cell.style.color = COLOR[truth];
+        const previousTruth = previous;   // captured per cell: `previous` keeps changing after this closure is made
+        if (i > 0 && previousTruth !== truth) cell.style.borderLeft = "4px solid #333";
+        if (disagrees(v.commit, label, isRule, t)) cell.style.outline = "2px dashed #333";
+        cell.addEventListener("click", () => showDetail(v, label, isRule, versions[i - 1] || null, previousTruth, truth));
+        previous = truth;
+    });
+}
+
+// Escapes text pulled from the JSONL records before it goes into innerHTML: commit shas, dates and labels are
+// git/contract data, not markup, and must never be interpreted as such.
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+}
+
+function showDetail(record, label, isRule, previousRecord, previousTruth, truth) {
+    const safeLabel = escapeHtml(label);
+    const lines = [`<strong>${safeLabel}</strong>`, `date: ${escapeHtml(record.date)}`, `commit: ${escapeHtml(record.commit)}`];
+    if (data.repoUrl) {
+        const href = escapeHtml(`${data.repoUrl}/commit/${record.commit}`);
+        lines.push(`<a href="${href}" target="_blank">view commit</a>`);
+    }
+    if (isRule) {
+        lines.push(`rule outcome: ${escapeHtml(record.rules.find((r) => r.label === label).outcome)}`);
+    } else {
+        const req = record.requirements.find((r) => r.label === label);
+        const prevReq = previousRecord && previousRecord.requirements.find((r) => r.label === label);
+        lines.push(`p(true) per chunk: ${escapeHtml(req.pTrue.join(", "))}`);
+        lines.push(`previous p(true): ${escapeHtml(prevReq ? prevReq.pTrue.join(", ") : "n/a")}`);
+        lines.push(`truth: ${escapeHtml(previousTruth ?? "n/a")} -> ${escapeHtml(truth)}`);
+    }
+    if (judges.length > 1) {
+        const t = currentAcceptAt();
+        const perJudge = byCommit.get(record.commit) || {};
+        const said = judges.map((j) => {
+            const rec = perJudge[j];
+            if (!rec) return `${escapeHtml(j)}: n/a`;
+            return `${escapeHtml(j)}: ${isRule ? ruleTruth(rec, label) : requirementTruth(rec, label, t)}`;
+        });
+        lines.push(`judges: ${said.join(" &middot; ")}`);
+    }
+    document.getElementById("detail").innerHTML = lines.join("<br>");
+}
+
+function render() {
+    const t = currentAcceptAt();
+    document.getElementById("acceptAtValue").textContent = t.toFixed(2);
+    const versions = versionsFor(selectedJudge);
+    document.getElementById("detail").textContent = "Click a cell for details.";
+    const table = document.getElementById("grid");
+    table.innerHTML = "";
+    const header = table.insertRow();
+    header.insertCell().textContent = "";
+    versions.forEach((v) => (header.insertCell().textContent = v.date.slice(0, 10)));
+    if (versions.length > 0) {
+        versions[0].rules.forEach((r) => addRow(table, r.label, versions, true, t));
+        versions[0].requirements.forEach((r) => addRow(table, r.label, versions, false, t));
+    }
+}
+
+function init() {
+    const select = document.getElementById("judgeSelect");
+    judges.forEach((j) => {
+        const option = document.createElement("option");
+        option.value = j;
+        option.textContent = j;
+        select.appendChild(option);
+    });
+    select.style.display = judges.length > 1 ? "inline-block" : "none";
+    select.addEventListener("change", () => {
+        selectedJudge = select.value;
+        render();
+    });
+    document.getElementById("acceptAt").addEventListener("input", render);
+    render();
+}
+init();
+</script>
+</body>
+</html>

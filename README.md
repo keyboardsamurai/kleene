@@ -1,15 +1,55 @@
 # Kleene
 
+**The model judges. Your code decides.**
+
 ![A model sends its judgment to a Kotlin machine with a Policy dial. The machine emits TRUE, FALSE or UNKNOWN as a typed action, which routes a support ticket to its queue, flags an urgent message, and sends an unclear case to human review.](docs/kleene.jpg)
 
-The model judges, your code decides: the Judge's probabilities go through your `Policy`, and every
-outcome, UNKNOWN included, maps to an action you wrote. An unclear case goes to human review instead
-of a guess.
+Kleene lets Kotlin code ask a Jev-like (non-autoregressive) model yes/no, pick-one and rating questions about text or JSON, and get
+back typed answers that a `when` can branch on. If the model is not sure enough for your `Policy`, the
+answer is UNKNOWN: a value you handle, for example by sending the case to a person. Never a hidden guess.
 
-Typed, three-valued semantic judgments for Kotlin/JVM. You ask a question about some text or JSON, a
-Judge returns probability distributions from model scores, and your application's `Policy` turns them
-into a `Verdict`: TRUE, FALSE or UNKNOWN for `feels`, an accepted option or UNKNOWN for `choose`, and a
-`Rating` for `score`. UNKNOWN is a value you handle, never an error. The model never decides for you.
+```kotlin
+val ai = Kleene(SystemOneJudge.fromEnv())
+val urgent by ai.feels("Needs a response today")
+
+when (urgent(message).truth) {
+    TRUE -> flag(message)
+    FALSE -> queue(message)
+    UNKNOWN -> humanReview(message)   // the Judge answered, but not clearly enough for your Policy
+}
+```
+
+## Why Kleene
+
+The usual way to put a model behind an `if` is to prompt a chat model for JSON such as
+`{"answer": true, "confidence": 0.95}`, parse it, and keep the Boolean. That has three problems:
+
+- **The confidence is self-reported.** The model wrote `0.95` the same way it writes any other text. It is not a measurement.
+- **Doubt becomes `false`.** A Boolean has no room for "not sure", so borderline cases turn into a silent yes or no.
+- **Failures look like answers.** A timeout or an unparsable reply often ends in a default value, and nobody notices.
+
+Kleene fixes each one:
+
+- **Probabilities from model scores.** A Judge is a decision model, such as TypeSafe's Jev or a local Kev. It
+  returns a probability for each possible answer, never generated text. Kleene checks every number and keeps
+  it exactly as received.
+- **Three outcomes.** Your `Policy` sets how sure is sure enough. Below that, the answer is UNKNOWN, not a
+  coin flip into yes or no.
+- **Errors throw.** A timeout, a 5xx or a malformed response throws a `KleeneException`. It never becomes
+  UNKNOWN, and UNKNOWN never becomes `false`.
+
+And you get more than a branch:
+
+- **Typed answers.** `choose` returns your own enum or class. `score` returns the whole distribution over your rubric.
+- **Change the threshold, not the call.** Every `Verdict` keeps its `Evidence`, so you can try a stricter
+  `Policy` with zero model calls.
+- **Test what your software says.** `check` holds any output (a template, a translation, a generated reply)
+  against a `Contract` of plain-language requirements and reports PASS, FAIL or UNKNOWN for each one.
+- **Cloud or local.** The same code runs against TypeSafe's hosted API or a Kev judge on your machine. Three
+  environment variables choose which.
+
+The name comes from Stephen Kleene's three-valued logic. `Truth` follows its rules: `TRUE and UNKNOWN` is
+UNKNOWN, `FALSE and UNKNOWN` is FALSE.
 
 ## Install
 
@@ -136,6 +176,22 @@ KLEENE_BASE_URL=http://127.0.0.1:8009 KLEENE_MODEL=kev-4b mvn test -Dgroups=live
 UNKNOWN means the judge answered but not clearly enough for your `Policy`: handle it with `when` or `orElse`.
 Failures throw `KleeneException` (`Authentication`, `InvalidRequest`, `RateLimited`, `Overloaded`,
 `Unavailable`, `Timeout`, `Malformed`, `Unsupported`) and never become UNKNOWN. Cancellation propagates.
+
+## Demos
+
+Runnable demo programs live in the `demo` module (never published; see
+[`docs/adr/0005-demos-live-in-a-separate-module.md`](docs/adr/0005-demos-live-in-a-separate-module.md)).
+The first demo, `kleene.demo.promises`, checks a `Contract` of user promises over every git
+version of a real terms-of-service document and reapplies the accept threshold at zero model
+calls. See [`demo/README.md`](demo/README.md).
+
+## Inspiration
+
+Kleene is inspired by [Probably](https://probably-lang.southpolesteve.workers.dev/)
+([source](https://github.com/southpolesteve/probably)) by [Steve Faulkner](https://github.com/southpolesteve),
+a small programming language for LLM workflows powered by Jev. Probably showed judgments as ordinary control
+flow: `feels`, `match` and an explicit "maybe" branch. Kleene carries that programming model into plain Kotlin:
+`feels`, `choose` and UNKNOWN. Thank you, Steve.
 
 ## License
 
