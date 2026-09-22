@@ -15,7 +15,6 @@ v1 is implemented (Maven build, `kleene` module, tests). Source of truth, in pri
 1. `docs/spec.md`: the v1 API, semantics, wire mapping, and required tests. Build against this.
 2. `docs/adr/`: decisions with trade-offs. Don't re-open them without a new ADR.
 3. `CONTEXT.md`: the glossary. Every type, function, and doc term must use its words; each entry lists synonyms to avoid.
-4. `docs/prd.md`: the original ChatGPT conversation. Background only. Where it conflicts with the spec (Gradle, Apache-2.0, `dev.kleene`, `inspect{}`, record/replay, toml profiles, `satisfy`, ...), the spec wins.
 
 `samples/` (gitignored) holds earlier prototypes under the old names "Probably" and "Jev". Don't copy their names or their API shape (e.g. `fold(yes=, no=)`, `jev(...)`, chat-style writers).
 
