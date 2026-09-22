@@ -21,6 +21,7 @@ class KalahTest {
 
         assertFalse(move.extraTurn)
         assertFalse(move.captured)
+        assertEquals(0, move.capturedSeeds)
         assertFalse(move.over)
         assertEquals(0, move.gain)
         assertContentEquals(board(listOf(4, 4, 4, 4, 4, 4), 0, listOf(0, 5, 5, 5, 5, 4), 0), move.board)
@@ -44,6 +45,7 @@ class KalahTest {
         // Sown: pits 2..6 and your store +1, their pits +1, their store skipped, the 13th seed back in pit 1.
         // Pit 1 now holds 1 and faces their last pit (2 seeds): 3 seeds captured, 4 in your store.
         assertTrue(move.captured)
+        assertEquals(3, move.capturedSeeds)
         assertFalse(move.extraTurn)
         assertEquals(4, move.gain)
         assertContentEquals(board(listOf(2, 2, 2, 2, 2, 0), 5, listOf(0, 2, 2, 2, 2, 2), 4), move.board)
@@ -56,6 +58,7 @@ class KalahTest {
         val move = sow(before, 2)
 
         assertTrue(move.captured)
+        assertEquals(4, move.capturedSeeds)
         assertEquals(4, move.gain)
         assertContentEquals(board(listOf(3, 3, 0, 3, 3, 3), 0, listOf(0, 0, 0, 0, 0, 2), 4), move.board)
     }
@@ -91,6 +94,7 @@ class KalahTest {
 
         // Pit 5 takes itself and their second pit (1 + 2); their side is then empty, so your 5 seeds are swept.
         assertTrue(move.captured)
+        assertEquals(3, move.capturedSeeds)
         assertTrue(move.over)
         assertEquals(8, move.gain)
         assertContentEquals(board(listOf(0, 0, 0, 0, 0, 0), 7, listOf(0, 0, 0, 0, 0, 0), 8), move.board)
@@ -105,6 +109,23 @@ class KalahTest {
     @Test
     fun `legal lists the non-empty pits of the side to move`() {
         assertEquals(listOf(1, 4), legal(board(listOf(0, 3, 0, 0, 1, 0), 0, List(6) { 1 }, 0)))
+    }
+
+    @Test
+    fun `threat is the opponent's best one-sowing gain after your move, 0 once the game is over`() {
+        // Your pit 4 steps into pit 5. Their pit 1 then lands in their empty pit 2 and captures it with your pit 5
+        // (2 seeds); that empties your row, so they also sweep their pit 5: 3. Their pit 5 would gain 0.
+        val reply = sow(board(listOf(0, 0, 0, 1, 0, 0), 10, listOf(1, 0, 0, 0, 1, 0), 10), 3)
+        // Your capture empties their row and ends the game.
+        val last = sow(board(listOf(0, 0, 0, 1, 0, 5), 0, listOf(0, 2, 0, 0, 0, 0), 7), 3)
+
+        assertEquals(3, threat(reply))
+        assertEquals(0, threat(last))
+    }
+
+    @Test
+    fun `threat is not defined on an extra turn, where you move again`() {
+        assertFailsWith<IllegalArgumentException> { threat(sow(start(), 2)) }
     }
 
     // 2. search

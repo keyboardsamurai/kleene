@@ -244,6 +244,13 @@ calibration: on intact versions, the real promise scores above a silent one with
 true/false criteria did not fix it. Both checkpoints also score TRUE on short probe texts that break
 a promise in paraphrase, and the multilingual one even when the text breaks it outright.
 
+The fault is in the checkpoints, not in the MLX port. Upstream Laya (`laya` 0.3.5, PyTorch) has
+the same weights and gives the same decided/wrong counts on this run at every `acceptAt`. So the
+results above, including the phrasing tests, hold for upstream too. Its third checkpoint,
+`laya-typed-decisions`, decides nothing at 0.85, is wrong on 130 of 133 cells at 0.60, and ranks the
+real promise above a silent one with probability 0.000. See
+[Laya: MLX port against upstream](kalah.md#laya-mlx-port-against-upstream).
+
 The wire is sound: all 236 Laya records parsed with no `Malformed`. Laya stays wire-compatible,
 untested ([ADR-0006](../docs/adr/0006-laya-runs-behind-a-third-party-bridge.md)). Do not use it for
 `check` without your own labelled evaluation.

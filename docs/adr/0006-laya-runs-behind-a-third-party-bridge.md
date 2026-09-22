@@ -36,4 +36,9 @@ section 3.5). `scripts/laya.sh` pins the bridge commit (`ad2b426`) and the laya-
 - The wire is sound, but the verdicts are not. In the demo run (`demo/README.md`, section Laya),
   both checkpoints are wrong on most cells that they decide, and chunking makes the errors worse.
   Do not use Laya for `check` without a labelled evaluation of your own.
+- The cause is the checkpoints, not laya-mlx. Upstream Laya (`laya` 0.3.5, PyTorch) has the same
+  weights and gives the same verdicts on both demos (`demo/kalah.md`, section "Laya: MLX port
+  against upstream"). Recalibration cannot fix it, because the checkpoints rank the answers wrongly.
+- laya-server runs in float16 by default. Its probabilities differ from upstream float32 by at most
+  0.009. `--dtype float32` removes the difference.
 - This decision extends the server list in the Consequences of ADR-0001.

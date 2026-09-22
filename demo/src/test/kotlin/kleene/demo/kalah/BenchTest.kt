@@ -71,6 +71,52 @@ class BenchTest {
         assertEquals(14, opponent.getValue("store").jsonPrimitive.int)
     }
 
+    /** The `if_sown` strings of the hinted [state] of [board]. */
+    private fun ifSown(board: IntArray): List<String> =
+        state(board, hints = true).value.jsonObject.getValue("if_sown").jsonArray.map { it.jsonPrimitive.content }
+
+    @Test
+    fun `the hinted state says per pit what sowing it does now, and the no-hint state keeps the plain rules`() {
+        // Pit 2 ends in your store. Pit 3 ends in empty pit 4 and captures it with the 4 seeds opposite. Pit 6 drops
+        // a seed in their first pit, which then ends in their empty second pit and captures it with your pit 5: 4.
+        // Pit 5 sows those 3 seeds away first. Their last pit (1 seed) always reaches their store: 1.
+        val board = board(listOf(0, 5, 1, 0, 3, 2), 0, listOf(0, 0, 4, 0, 0, 1), 0)
+
+        assertEquals(
+            listOf(
+                "pit 1: empty, cannot be sown",
+                "pit 2: 1 seed into your store; extra turn",
+                "pit 3: 5 seeds into your store, including a capture of 5 seeds; no extra turn; then the opponent can gain at most 1",
+                "pit 4: empty, cannot be sown",
+                "pit 5: 1 seed into your store; no extra turn; then the opponent can gain at most 1",
+                "pit 6: 1 seed into your store; no extra turn; then the opponent can gain at most 4",
+            ),
+            ifSown(board),
+        )
+        val rules = state(board, hints = true).value.jsonObject.getValue("rules").jsonPrimitive.content
+        assertTrue(rules.startsWith("$RULES "))
+        assertContains(rules, "if_sown")
+        val plain = state(board).value.jsonObject
+        assertEquals(RULES, plain.getValue("rules").jsonPrimitive.content)
+        assertEquals(setOf("rules", "you", "opponent"), plain.keys)
+    }
+
+    @Test
+    fun `the hinted state counts the end sweep in the gain and names no opponent gain once the game ends`() {
+        // Pit 4 takes their only 2 seeds, so their row is empty and your pit 6 is swept too: 1 + 2 + 5.
+        val board = board(listOf(0, 0, 0, 1, 0, 5), 0, listOf(0, 2, 0, 0, 0, 0), 7)
+
+        assertEquals("pit 4: 8 seeds into your store, including a capture of 3 seeds; no extra turn; the game ends", ifSown(board)[3])
+        assertEquals("pit 6: 1 seed into your store; no extra turn; then the opponent can gain at most 0", ifSown(board)[5])
+    }
+
+    @Test
+    fun `the hinted state of every seed-1 position fits in 1650 chars, about 465 tokens, so Laya English sees all of it`() {
+        val largest = positions(seed = 1).maxOf { state(it, hints = true).value.toString().length }
+
+        assertTrue(largest <= 1650, "largest hinted state is $largest chars")
+    }
+
     // 3. log
 
     @Test
@@ -99,6 +145,29 @@ class BenchTest {
         assertEquals(List(6) { 0.2 }, record.takes)
         assertEquals(listOf(0.0, 0.1, 0.8, 0.1, 0.0), record.lead)
         assertEquals(2.0, record.leadExpected, 1e-9)
+    }
+
+    @Test
+    fun `log with hints sends the hinted state and marks every record`() = runTest {
+        val judge = scriptedJudge()
+        val boards = positions(seed = 1, count = 2)
+        val out = tempJsonl()
+
+        log(Kleene(judge), boards, out, hints = true)
+
+        judge.requests.forEachIndexed { i, request -> assertEquals(state(boards[i], hints = true), request.state as State.Json) }
+        assertEquals(listOf(true, true), readRecords(out).map { it.hints })
+    }
+
+    @Test
+    fun `log refuses to resume a file logged with the other hints flag, so one file never mixes two states`() = runTest {
+        val out = tempJsonl()
+        log(Kleene(scriptedJudge()), positions(seed = 1, count = 1), out)
+
+        // A no-hint record is written as before, so older runs still read and resume the same.
+        assertFalse("hints" in out.readText())
+        assertEquals(listOf(false), readRecords(out).map { it.hints })
+        assertFailsWith<IllegalStateException> { log(Kleene(scriptedJudge()), positions(seed = 1, count = 2), out, hints = true) }
     }
 
     @Test
@@ -184,9 +253,23 @@ class BenchTest {
         // gain 1, so it takes pit 5 and loses 2. Lead is even on twoPits and clearly ahead on lastSeed.
         assertEquals(listOf("baseline: random", "2", "75%", "0.50", "0.00", "–", "–", "–"), cells(table, "baseline: random"))
         assertEquals(listOf("baseline: greedy", "2", "50%", "1.00", "0.00", "–", "–", "–"), cells(table, "baseline: greedy"))
+        // Both twoPits pits end in your store (no threat) and gain 1, so gain minus threat also takes pit 5.
+        assertEquals(listOf("baseline: gain minus threat", "2", "50%", "1.00", "0.00", "–", "–", "–"), cells(table, "baseline: gain minus threat"))
         assertEquals(listOf("baseline: always even", "2", "–", "–", "–", "1.00", "–", "–"), cells(table, "baseline: always even"))
         assertEquals(listOf("baseline: stores only", "2", "–", "–", "–", "0.00", "–", "–"), cells(table, "baseline: stores only"))
         // Always FALSE decides all 24 again/takes and misses the 3 TRUE ones: again5, again6 on twoPits, again6 on lastSeed.
         assertEquals(listOf("baseline: always FALSE", "2", "–", "–", "–", "–", "–", "24/3"), cells(table, "baseline: always FALSE"))
+    }
+
+    @Test
+    fun `the gain minus threat baseline gives up a seed that would hand the opponent a capture`() {
+        // Greedy sows pit 5 for 1 seed and leaves pit 1 open: their 2-seed pit then ends in their empty pit opposite
+        // it and captures 2. Pit 1 gains 0 and leaves them nothing. The engine values pit 1 at 2 and pit 5 at -2.
+        val trap = board(listOf(1, 0, 0, 0, 3, 0), 10, listOf(0, 0, 0, 2, 0, 0), 10)
+        val table = leaderboard(mapOf("kev" to listOf(record(0, trap, List(6) { 1.0 / 6 }, List(6) { 0.5 }, List(6) { 0.5 }, 2.0))), listOf(0.85))
+
+        assertEquals(mapOf(0 to 2, 4 to -2), values(trap))
+        assertEquals(listOf("baseline: greedy", "1", "0%", "4.00", "0.00", "–", "–", "–"), cells(table, "baseline: greedy"))
+        assertEquals(listOf("baseline: gain minus threat", "1", "100%", "0.00", "0.00", "–", "–", "–"), cells(table, "baseline: gain minus threat"))
     }
 }

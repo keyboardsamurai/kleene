@@ -39,6 +39,11 @@ const val RULES =
         "to your store. When all 6 pits of either side are empty, the game ends and each side adds the seeds left " +
         "in its pits to its own store. Most seeds in store wins."
 
+/** Appended to the [RULES] in a hinted [state] only, so a no-hint state stays the one earlier runs logged. */
+const val IF_SOWN_RULE =
+    "if_sown says, for each of your pits, what sowing it now does, and then the most seeds the opponent can put " +
+        "into their store with one sowing."
+
 /**
  * [count] distinct positions, the same for the same [seed]: each is [0, 40] random plies from the start (a game
  * that ends starts again) and a real decision, with at least 2 legal pits and at least 2 seeds between the best
@@ -71,11 +76,12 @@ private fun isDecision(board: IntArray): Boolean {
 
 /**
  * The [State] of [board] for the side to move: the [RULES], `you` (pits 1..6, store) and `opponent`, whose
- * `pits_opposite_yours` is aligned with your pits, so its first entry faces your pit 1.
+ * `pits_opposite_yours` is aligned with your pits, so its first entry faces your pit 1. With [hints], also
+ * `if_sown`: one [ifSown] line per pit, and the [IF_SOWN_RULE] after the rules.
  */
-fun state(board: IntArray): State.Json = State.Json(
+fun state(board: IntArray, hints: Boolean = false): State.Json = State.Json(
     buildJsonObject {
-        put("rules", RULES)
+        put("rules", if (hints) "$RULES $IF_SOWN_RULE" else RULES)
         putJsonObject("you") {
             putJsonArray("pits") { (0..5).forEach { add(board[it]) } }
             put("store", board[6])
@@ -84,13 +90,34 @@ fun state(board: IntArray): State.Json = State.Json(
             putJsonArray("pits_opposite_yours") { (0..5).forEach { add(board[12 - it]) } }
             put("store", board[13])
         }
+        if (hints) putJsonArray("if_sown") { (0..5).forEach { add(ifSown(board, it)) } }
     },
 )
 
 /**
+ * What sowing [pit] does now, in one line: the gain, the capture, the extra turn, the game end, and else the
+ * [threat]. One-ply facts only, never anything from the search, so reading them is judging, not computing.
+ */
+private fun ifSown(board: IntArray, pit: Int): String {
+    val name = "pit ${pit + 1}"
+    if (board[pit] == 0) return "$name: empty, cannot be sown"
+    val move = sow(board, pit)
+    val capture = if (move.captured) ", including a capture of ${move.capturedSeeds} seeds" else ""
+    val turn = if (move.extraTurn) "extra turn" else "no extra turn"
+    val after = when {
+        move.over -> "; the game ends"
+        move.extraTurn -> ""
+        else -> "; then the opponent can gain at most ${threat(move)}"
+    }
+    return "$name: ${seeds(move.gain)} into your store$capture; $turn$after"
+}
+
+private fun seeds(n: Int): String = if (n == 1) "1 seed" else "$n seeds"
+
+/**
  * One ask about one position, serialized: every probability exactly as received. [move] is p(pit 1..6), [again]
  * and [takes] p(true) of `againN` and `takesN`, [lead] p per [LEAD_LEVELS] level and [leadExpected] the judge's
- * expected level.
+ * expected level. [hints] is whether the [state] had `if_sown`; false is not written, so older files read the same.
  */
 @Serializable
 data class Record(
@@ -103,6 +130,7 @@ data class Record(
     val takes: List<Double>,
     val lead: List<Double>,
     val leadExpected: Double,
+    val hints: Boolean = false,
 )
 
 /** The 14 fixed questions, bound to [ai]. Fixed labels keep every wire id the same across positions. */
@@ -119,13 +147,14 @@ private class Questions(ai: Kleene) {
 }
 
 /**
- * Appends one [Record] per position to [out], one ask each, skipping position ids already there so a rerun
- * after a crash resumes; that is the whole error strategy.
+ * Appends one [Record] per position to [out], one ask each on the [state] with or without [hints], skipping
+ * position ids already there so a rerun after a crash resumes; that is the whole error strategy.
  *
- * @throws IllegalStateException if a logged board is not the regenerated one: one file holds one benchmark.
+ * @throws IllegalStateException if a logged board is not the regenerated one, or a logged record has another judge
+ *   or [hints] flag: one file holds one benchmark.
  * @throws kleene.KleeneException if the judge fails: a failure is never turned into UNKNOWN or a missing cell.
  */
-suspend fun log(ai: Kleene, positions: List<IntArray>, out: File) {
+suspend fun log(ai: Kleene, positions: List<IntArray>, out: File, hints: Boolean = false) {
     val logged = if (out.exists()) readRecords(out).associateBy { it.position } else emptyMap()
     positions.forEachIndexed { id, board ->
         val previous = logged[id] ?: return@forEachIndexed
@@ -135,17 +164,20 @@ suspend fun log(ai: Kleene, positions: List<IntArray>, out: File) {
         check(previous.judge == ai.judge.id) {
             "position $id in $out is from judge ${previous.judge}, not ${ai.judge.id}: log each judge into its own file"
         }
+        check(previous.hints == hints) {
+            "position $id in $out was logged with hints=${previous.hints}, not $hints: log each state into its own file"
+        }
     }
     val questions = Questions(ai)
     positions.forEachIndexed { id, board ->
         if (id in logged) return@forEachIndexed
-        out.appendText(Json.encodeToString(recordFor(ai, questions, id, board)) + "\n")
+        out.appendText(Json.encodeToString(recordFor(ai, questions, id, board, hints)) + "\n")
         println("logged position $id (${id + 1} of ${positions.size})")
     }
 }
 
-private suspend fun recordFor(ai: Kleene, questions: Questions, id: Int, board: IntArray): Record {
-    val answers = ai.ask(state(board), *questions.all)
+private suspend fun recordFor(ai: Kleene, questions: Questions, id: Int, board: IntArray, hints: Boolean): Record {
+    val answers = ai.ask(state(board, hints), *questions.all)
     val lead = answers[questions.lead]
     return Record(
         position = id,
@@ -157,6 +189,7 @@ private suspend fun recordFor(ai: Kleene, questions: Questions, id: Int, board: 
         takes = questions.takes.map { answers[it].evidence.probabilityOf(true) },
         lead = lead.probabilities,
         leadExpected = lead.expected,
+        hints = hints,
     )
 }
 
@@ -176,10 +209,11 @@ fun factsOf(runs: Map<String, List<Record>>): Map<List<Int>, Facts> =
 
 /**
  * The markdown leaderboard of [runs] (label to records), reapplied at each of [acceptAts] with zero model calls.
- * The main table has one row per run, each scored over its own records, then five baselines that play no judge:
+ * The main table has one row per run, each scored over its own records, then six baselines that play no judge:
  * `random` (the exact expectation of a uniform legal pit), `greedy` (the highest immediate gain, first on a tie),
- * `always even` and `stores only` (lead), and `always FALSE` (again/takes). A second table counts decided/wrong
- * moves and again/takes per acceptAt.
+ * `gain minus threat` (the highest [netGain], first on a tie: a perfect reader of `if_sown`), `always even` and
+ * `stores only` (lead), and `always FALSE` (again/takes). A second table counts decided/wrong moves and
+ * again/takes per acceptAt.
  */
 fun leaderboard(runs: Map<String, List<Record>>, acceptAts: List<Double>, facts: Map<List<Int>, Facts> = factsOf(runs)): String {
     val scored = runs.mapValues { (_, records) -> records.map { it to facts.getValue(it.board) } }
@@ -218,6 +252,7 @@ private fun baselineRows(facts: Map<List<Int>, Facts>): List<List<String>> {
     val n = "${facts.size}"
     val all = facts.values
     val greedy = facts.map { (board, f) -> f to f.legal.maxBy { sow(board.toIntArray(), it).gain } }
+    val gainMinusThreat = facts.map { (board, f) -> f to f.legal.maxBy { netGain(sow(board.toIntArray(), it)) } }
     val random = listOf(
         percent(all.map { it.best.size.toDouble() / it.legal.size }.average()),
         twoDecimals(all.map { f -> f.legal.map { regret(f, it) }.average() }.average()),
@@ -225,11 +260,15 @@ private fun baselineRows(facts: Map<List<Int>, Facts>): List<List<String>> {
     return listOf(
         listOf("baseline: random", n) + random + listOf(twoDecimals(0.0), NONE, NONE, NONE),
         listOf("baseline: greedy", n) + pickColumns(greedy) + listOf(twoDecimals(0.0), NONE, NONE, NONE),
+        listOf("baseline: gain minus threat", n) + pickColumns(gainMinusThreat) + listOf(twoDecimals(0.0), NONE, NONE, NONE),
         listOf("baseline: always even", n, NONE, NONE, NONE, twoDecimals(all.map { abs(2 - it.lead).toDouble() }.average()), NONE, NONE),
         listOf("baseline: stores only", n, NONE, NONE, NONE, twoDecimals(all.map { abs(it.storesLead - it.lead).toDouble() }.average()), NONE, NONE),
         listOf("baseline: always FALSE", n, NONE, NONE, NONE, NONE, NONE, "${12 * all.size}/${all.sumOf { f -> (f.again + f.takes).count { it } }}"),
     )
 }
+
+/** The gain of [move] minus the opponent's [threat] after it; no threat on an extra turn or at the game end. */
+private fun netGain(move: Move): Int = move.gain - if (move.extraTurn) 0 else threat(move)
 
 /** Best move (the share of [picks] that is a best pit) and regret (the mean seeds lost), one pick per position. */
 private fun pickColumns(picks: List<Pair<Facts, Int>>): List<String> = listOf(

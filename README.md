@@ -136,8 +136,10 @@ Set `KLEENE_BASE_URL=http://127.0.0.1:8010` and `KLEENE_MODEL=laya-mlx`. Laya is
 ([ADR-0006](docs/adr/0006-laya-runs-behind-a-third-party-bridge.md)): its default multilingual checkpoint reads at
 most 1024 tokens of state, instructions and options, drops the rest without an error, and is not calibrated. In
 the demo it was wrong on most cells it decided ([demo/README.md](demo/README.md#laya)), so don't use it for `check`
-without your own evaluation. The two uvicorn warnings the server logs for each request (`Unsupported upgrade request.` and `No supported WebSocket
-library detected`) are harmless: they come from the HTTP/2 upgrade header that `java.net.http.HttpClient` sends.
+without your own evaluation. Upstream Laya (PyTorch) gives the same answers, so this is the model, not the MLX port
+([demo/kalah.md](demo/kalah.md#laya-mlx-port-against-upstream)). The two uvicorn warnings the server logs for each
+request (`Unsupported upgrade request.` and `No supported WebSocket library detected`) are harmless: they come from
+the HTTP/2 upgrade header that `java.net.http.HttpClient` sends.
 
 ## Check an output against a contract
 

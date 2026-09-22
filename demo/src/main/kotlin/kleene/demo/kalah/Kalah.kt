@@ -27,10 +27,13 @@ fun start(): IntArray = IntArray(14) { if (it == STORE || it == THEIR_STORE) 0 e
 
 /**
  * The result of one [sow]. [board] is seen from whoever moves next: the mover again on an [extraTurn], else the
- * opponent (flipped). [gain] is what the mover's store grew by, capture and end sweep included. When [over], nobody
- * moves; [board] still follows the flip rule and holds only the two final stores.
+ * opponent (flipped). [capturedSeeds] is what a capture moved into the store (the last seed and the opposite ones),
+ * 0 if none. [gain] is what the mover's store grew by, capture and end sweep included. When [over], nobody moves;
+ * [board] still follows the flip rule and holds only the two final stores.
  */
-class Move(val board: IntArray, val extraTurn: Boolean, val captured: Boolean, val gain: Int, val over: Boolean)
+class Move(val board: IntArray, val extraTurn: Boolean, val capturedSeeds: Int, val gain: Int, val over: Boolean) {
+    val captured: Boolean get() = capturedSeeds > 0
+}
 
 /**
  * Sows [pit] (0..5, non-empty) counter-clockwise, one seed per pit, into your store but never theirs. The last seed
@@ -49,9 +52,9 @@ fun sow(board: IntArray, pit: Int): Move {
         next[at]++
         seeds--
     }
-    val captured = at < STORE && next[at] == 1 && next[12 - at] > 0
-    if (captured) {
-        next[STORE] += next[at] + next[12 - at]
+    val capturedSeeds = if (at < STORE && next[at] == 1 && next[12 - at] > 0) 1 + next[12 - at] else 0
+    if (capturedSeeds > 0) {
+        next[STORE] += capturedSeeds
         next[at] = 0
         next[12 - at] = 0
     }
@@ -65,7 +68,16 @@ fun sow(board: IntArray, pit: Int): Move {
         }
     }
     val extraTurn = at == STORE
-    return Move(if (extraTurn) next else flip(next), extraTurn, captured, next[STORE] - board[STORE], over)
+    return Move(if (extraTurn) next else flip(next), extraTurn, capturedSeeds, next[STORE] - board[STORE], over)
+}
+
+/**
+ * The most seeds the opponent can put into their store with one [sow] after [move]: their best immediate gain, 0
+ * once the game is over. Not defined on an extra turn, where you move again.
+ */
+fun threat(move: Move): Int {
+    require(move.over || !move.extraTurn) { "no opponent reply: you move again" }
+    return legal(move.board).maxOfOrNull { sow(move.board, it).gain } ?: 0
 }
 
 /** The pits the side to move may sow: every non-empty one, none once the game is over. */
