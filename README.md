@@ -53,6 +53,17 @@ UNKNOWN, `FALSE and UNKNOWN` is FALSE.
 
 ## Install
 
+Kleene is not published to Maven Central yet. Build it and install it into your local Maven
+repository (`~/.m2`) first. You need JDK 17 and Maven:
+
+```sh
+git clone https://github.com/keyboardsamurai/kleene.git
+cd kleene
+mvn -pl kleene -am install   # runs unit tests, installs kleene-parent and kleene
+```
+
+Then add the dependency to your project:
+
 ```xml
 <dependency>
     <groupId>com.antonioagudo.libs</groupId>
@@ -60,6 +71,8 @@ UNKNOWN, `FALSE and UNKNOWN` is FALSE.
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
+
+Gradle builds resolve it after you add `mavenLocal()` to `repositories`.
 
 JDK 17, Kotlin 2.x. Runtime deps: `kotlinx-coroutines-core`, `kotlinx-serialization-json`.
 
