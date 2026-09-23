@@ -3,6 +3,8 @@ package kleene.demo.promises
 import kleene.Kleene
 import kleene.Policy
 import kleene.SystemOneJudge
+import kleene.demo.UsageError
+import kleene.demo.splitArgs
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
@@ -17,9 +19,6 @@ private const val USAGE = """Usage:
   log <repoDir> <path> [--out promises.jsonl] [--chunk <chars>] [--timeout <seconds>]
   grid <jsonl>... [--accept-at 0.85]
   html <jsonl>... [--out grid.html] [--repo-url URL]"""
-
-/** Raised for any usage mistake; caught by [run], which then prints [USAGE] and returns 2. */
-private class UsageError(message: String) : Exception(message)
 
 /**
  * Runs one subcommand of the promise-tests CLI (`log`, `grid`, `html`). Returns 0 on success, 2 for missing or
@@ -84,24 +83,4 @@ private fun runHtml(args: List<String>): Int {
 private fun judgeFromEnv(timeout: Duration): SystemOneJudge {
     val env = SystemOneJudge.fromEnv()
     return SystemOneJudge(env.baseUrl, env.model, env.apiKey, timeout)
-}
-
-/** Splits [args] into positional arguments and the [known] `--option value` pairs. */
-private fun splitArgs(args: List<String>, known: Set<String>): Pair<List<String>, Map<String, String>> {
-    val positional = mutableListOf<String>()
-    val options = mutableMapOf<String, String>()
-    var i = 0
-    while (i < args.size) {
-        val arg = args[i]
-        when {
-            arg in known -> {
-                i++
-                options[arg] = args.getOrNull(i) ?: throw UsageError("$arg needs a value")
-            }
-            arg.startsWith("--") -> throw UsageError("unknown option $arg")
-            else -> positional += arg
-        }
-        i++
-    }
-    return positional to options
 }

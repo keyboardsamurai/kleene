@@ -1,12 +1,11 @@
 package kleene.demo.promises
 
-import kleene.Evidence
-import kleene.Kind
 import kleene.Kleene
 import kleene.Policy
 import kleene.Truth
 import kleene.check
 import kleene.contract
+import kleene.demo.feelsEvidence
 import kleene.truth
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -102,9 +101,8 @@ private suspend fun recordFor(ai: Kleene, version: Version, path: String, maxCha
  * chunk is FALSE, else UNKNOWN. Reapply: zero model calls.
  */
 fun decide(pTrue: List<Double>, policy: Policy, judge: String, model: String): Truth =
-    // ponytail: p(false) reconstructed as 1-p; decideFeels reads p(true) only, so the verdict is exact.
     pTrue
-        .map { p -> Evidence(Kind.FEELS, listOf(true, false), listOf(p, 1 - p), null, judge, model).decide(policy).truth }
+        .map { p -> feelsEvidence(p, judge, model).decide(policy).truth }
         .reduce(Truth::or)
 
 /** Reads every [Record] from [files], one JSONL line each. */

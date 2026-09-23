@@ -28,11 +28,14 @@ cfg = json.loads((model / "rl_agent_config.json").read_text())
 max_len, head = cfg["max_len"], cfg["head_max_len"]
 tok = Tokenizer(model / "tokenizer")
 
-# The wire questions of Bench.kt `Questions`, as SystemOneJudge sends them.
+# The wire questions as SystemOneJudge sends them. These texts mirror `Questions` in
+# demo/src/main/kotlin/kleene/demo/icd/Bench.kt: edit both together.
 labels = [f"{c['code']} {c['title']}" for c in json.loads(Path(a.labels).read_text())["codes"]]
 feels = {l: {"type": "noul", "instructions": f"The document supports {l} as a current diagnosis of this patient"} for l in labels}
 choose = {"type": "choice", "instructions": "Which is the principal diagnosis of this patient in the document?",
           "criteria": dict.fromkeys(labels + ["none of these"])}
+# ponytail: Agent._to_internal is private and the option clipping below copies laya-mlx internals; both are
+# pinned to laya-mlx==0.2.0. Recheck them before bumping the pin.
 prefix = lambda q: len(build_prefix(tok, Agent._to_internal(q), head)[0])
 longest_feels = max(prefix(q) for q in feels.values())
 principal = prefix(choose)

@@ -2,6 +2,8 @@ package kleene.demo.kalah
 
 import kleene.Kleene
 import kleene.SystemOneJudge
+import kleene.demo.UsageError
+import kleene.demo.splitArgs
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
@@ -16,9 +18,6 @@ private const val USAGE = """Usage:
   log [--out out/kalah/kalah.jsonl] [--count 200] [--seed 1] [--timeout 60] [--hints]
   rank <jsonl>... [--accept-at 0.95,0.85,0.75,0.60]
   html <jsonl>... [--out out/kalah/kalah.html]"""
-
-/** Raised for any usage mistake; caught by [run], which then prints it and [USAGE] and returns 2. */
-private class UsageError(message: String) : Exception(message)
 
 /**
  * Runs one subcommand of the Kalah bench CLI (`log`, `rank`, `html`). Returns 0 on success, 2 for missing or
@@ -102,24 +101,4 @@ private fun acceptAts(list: String): List<Double> = list.split(",").map { item -
 private fun judgeFromEnv(timeout: Duration): SystemOneJudge {
     val env = SystemOneJudge.fromEnv()
     return SystemOneJudge(env.baseUrl, env.model, env.apiKey, timeout)
-}
-
-/** Splits [args] into positional arguments and the [known] `--option value` pairs. */
-private fun splitArgs(args: List<String>, known: Set<String>): Pair<List<String>, Map<String, String>> {
-    val positional = mutableListOf<String>()
-    val options = mutableMapOf<String, String>()
-    var i = 0
-    while (i < args.size) {
-        val arg = args[i]
-        when {
-            arg in known -> {
-                i++
-                options[arg] = args.getOrNull(i) ?: throw UsageError("$arg needs a value")
-            }
-            arg.startsWith("--") -> throw UsageError("unknown option $arg")
-            else -> positional += arg
-        }
-        i++
-    }
-    return positional to options
 }

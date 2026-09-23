@@ -2,6 +2,8 @@ package kleene.demo.icd
 
 import kleene.Kleene
 import kleene.SystemOneJudge
+import kleene.demo.UsageError
+import kleene.demo.splitArgs
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
@@ -14,9 +16,6 @@ fun main(args: Array<String>) {
 private const val USAGE = """Usage:
   log [--out out/icd/icd.jsonl] [--timeout 120] [--cut <file of document ids, one per line>]
   rank <jsonl>... [--accept-at 0.5,0.6,0.7,0.8,0.85,0.9,0.95]"""
-
-/** Raised for any usage mistake; caught by [run], which then prints it and [USAGE] and returns 2. */
-private class UsageError(message: String) : Exception(message)
 
 /**
  * Runs one subcommand of the ICD bench CLI (`log`, `rank`). Returns 0 on success, 2 for missing or unknown
@@ -47,13 +46,15 @@ private fun runLog(args: List<String>): Int {
     if (positional.isNotEmpty()) throw UsageError("log takes no positional arguments")
     val out = File(options["--out"] ?: "out/icd/icd.jsonl")
     val timeout = options["--timeout"]?.let { it.toIntOrNull() ?: throw UsageError("--timeout must be a number") } ?: 120
-    val cut = options["--cut"]?.let { File(it).readLines().map(String::trim).filter(String::isNotEmpty).toSet() } ?: emptySet()
+    val docs = fixture()
+    val cut = options["--cut"]?.let(::cutOf) ?: emptySet()
+    (cut - docs.map { it.id }.toSet()).firstOrNull()?.let { throw UsageError("--cut lists $it, which is not in the fixture") }
 
     // A per-attempt timeout longer than the library default: 52 questions per document are slow on a local judge.
     val env = SystemOneJudge.fromEnv()
     val ai = Kleene(SystemOneJudge(env.baseUrl, env.model, env.apiKey, timeout.seconds))
     out.absoluteFile.parentFile.mkdirs()
-    runBlocking { log(ai, labels().codes, fixture(), out, fixtureVersion(), cut) }
+    runBlocking { log(ai, labels().codes, docs, out, fixtureVersion(), cut) }
     return 0
 }
 
@@ -71,6 +72,7 @@ private fun runRank(args: List<String>): Int {
  * Every record must be from the current [fixtureVersion], so a run is never scored against edited gold labels.
  */
 private fun runsOf(files: List<String>): Map<String, List<Record>> {
+    files.firstOrNull { !File(it).isFile }?.let { throw UsageError("$it is not a file") }
     val runs = files.map(::File).associate { it.nameWithoutExtension to readRecords(it) }
     runs.filterValues { it.isEmpty() }.keys.firstOrNull()?.let { throw UsageError("$it has no records") }
     if (runs.size != files.size) throw UsageError("two files have the same name; a run is labelled by its file name")
@@ -83,27 +85,17 @@ private fun runsOf(files: List<String>): Map<String, List<Record>> {
     return runs
 }
 
-/** Parses a comma list such as `0.5,0.85`; each must be in [0.5, 1]. 0.5 means no UNKNOWN band (see [policyAt]). */
-private fun acceptAts(list: String): List<Double> = list.split(",").map { item ->
-    item.trim().toDoubleOrNull()?.takeIf { it >= 0.5 && it <= 1.0 } ?: throw UsageError("--accept-at needs numbers in [0.5, 1], got $item")
+/** The document ids in [path], one per line. */
+private fun cutOf(path: String): Set<String> {
+    val file = File(path)
+    if (!file.isFile) throw UsageError("--cut $path is not a file")
+    return file.readLines().map(String::trim).filter(String::isNotEmpty).toSet()
 }
 
-/** Splits [args] into positional arguments and the [known] `--option value` pairs. */
-private fun splitArgs(args: List<String>, known: Set<String>): Pair<List<String>, Map<String, String>> {
-    val positional = mutableListOf<String>()
-    val options = mutableMapOf<String, String>()
-    var i = 0
-    while (i < args.size) {
-        val arg = args[i]
-        when {
-            arg in known -> {
-                i++
-                options[arg] = args.getOrNull(i) ?: throw UsageError("$arg needs a value")
-            }
-            arg.startsWith("--") -> throw UsageError("unknown option $arg")
-            else -> positional += arg
-        }
-        i++
-    }
-    return positional to options
+/**
+ * Parses a comma list such as `0.5,0.85`; each must be in [0.5, 1]. 0.5 removes the UNKNOWN band for `feels` only
+ * (see [policyAt]): the principal `choose` is still UNKNOWN when its top p is 0.5 or less.
+ */
+private fun acceptAts(list: String): List<Double> = list.split(",").map { item ->
+    item.trim().toDoubleOrNull()?.takeIf { it >= 0.5 && it <= 1.0 } ?: throw UsageError("--accept-at needs numbers in [0.5, 1], got $item")
 }

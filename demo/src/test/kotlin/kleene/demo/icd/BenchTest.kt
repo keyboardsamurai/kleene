@@ -15,9 +15,9 @@ import kotlin.test.assertFailsWith
 
 class BenchTest {
 
-    private val labels = listOf(
-        Label("E10", 4, "Type 1 diabetes mellitus", emptyMap()),
-        Label("E11", 4, "Type 2 diabetes mellitus", emptyMap()),
+    private val categories = listOf(
+        Category("E10", 4, "Type 1 diabetes mellitus", emptyMap()),
+        Category("E11", 4, "Type 2 diabetes mellitus", emptyMap()),
     )
 
     private fun doc(id: String, text: String) = Doc(id, text, "en", "GP note", "terse", "clinician", null, "E11", listOf(Gold("E11", "E11.9")))
@@ -39,7 +39,7 @@ class BenchTest {
     fun `log asks once per document with the fixed question set and the text as the only state`() = runTest {
         val judge = scriptedJudge()
 
-        log(Kleene(judge), labels, docs, tempJsonl(), "v1")
+        log(Kleene(judge), categories, docs, tempJsonl(), "v1")
 
         assertEquals(3, judge.requests.size)
         judge.requests.forEachIndexed { i, request ->
@@ -56,7 +56,7 @@ class BenchTest {
     fun `log stores every probability and the confidence as received, with the fixture version and the fits flag`() = runTest {
         val out = tempJsonl()
 
-        log(Kleene(scriptedJudge()), labels, docs, out, "v1", cut = setOf("d2"))
+        log(Kleene(scriptedJudge()), categories, docs, out, "v1", cut = setOf("d2"))
 
         val records = readRecords(out)
         assertEquals(listOf("d1", "d2", "d3"), records.map { it.id })
@@ -74,9 +74,9 @@ class BenchTest {
     fun `log resumes by document id, asking nothing for documents already in the file`() = runTest {
         val judge = scriptedJudge()
         val out = tempJsonl()
-        log(Kleene(judge), labels, docs.take(2), out, "v1")
+        log(Kleene(judge), categories, docs.take(2), out, "v1")
 
-        log(Kleene(judge), labels, docs, out, "v1")
+        log(Kleene(judge), categories, docs, out, "v1")
 
         assertEquals(3, judge.requests.size)
         assertEquals(listOf("d1", "d2", "d3"), readRecords(out).map { it.id })
@@ -85,18 +85,26 @@ class BenchTest {
     @Test
     fun `log refuses a file that another judge wrote, so one file never mixes judges`() = runTest {
         val out = tempJsonl()
-        log(Kleene(scriptedJudge()), labels, docs.take(1), out, "v1")
+        log(Kleene(scriptedJudge()), categories, docs.take(1), out, "v1")
         out.writeText(out.readText().replace("\"judge\":\"scripted\"", "\"judge\":\"127.0.0.1/kev-4b\""))
 
-        assertFailsWith<IllegalStateException> { log(Kleene(scriptedJudge()), labels, docs, out, "v1") }
+        assertFailsWith<IllegalStateException> { log(Kleene(scriptedJudge()), categories, docs, out, "v1") }
     }
 
     @Test
     fun `log refuses a file logged against another fixture version, so one file never mixes benchmarks`() = runTest {
         val out = tempJsonl()
-        log(Kleene(scriptedJudge()), labels, docs.take(1), out, "v1")
+        log(Kleene(scriptedJudge()), categories, docs.take(1), out, "v1")
 
-        assertFailsWith<IllegalStateException> { log(Kleene(scriptedJudge()), labels, docs, out, "v2") }
+        assertFailsWith<IllegalStateException> { log(Kleene(scriptedJudge()), categories, docs, out, "v2") }
+    }
+
+    @Test
+    fun `log refuses a file whose fits flags another cut wrote, so one file never mixes cuts`() = runTest {
+        val out = tempJsonl()
+        log(Kleene(scriptedJudge()), categories, docs.take(1), out, "v1")
+
+        assertFailsWith<IllegalStateException> { log(Kleene(scriptedJudge()), categories, docs, out, "v1", cut = setOf("d1")) }
     }
 
     @Test
@@ -110,7 +118,7 @@ class BenchTest {
         }
         val out = tempJsonl()
 
-        assertFailsWith<KleeneException.Overloaded> { log(Kleene(failing), labels, docs, out, "v1") }
+        assertFailsWith<KleeneException.Overloaded> { log(Kleene(failing), categories, docs, out, "v1") }
         assertEquals(listOf("d1"), readRecords(out).map { it.id })
     }
 }
