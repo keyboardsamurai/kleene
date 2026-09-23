@@ -4,6 +4,9 @@ A demo of Kleene's `check` on real terms-of-service history: for every git versi
 document, ask whether it keeps a set of user promises, store the `Evidence`, and reapply a
 `Policy` to it later at zero model calls.
 
+Other demos in this module: the [Kalah bench](kalah.md) and the [ICD bench](icd.md) (ICD-10-CM coding with
+`feels` and `choose`).
+
 ## What it shows
 
 - **UNKNOWN as a value.** A promise going vague across two versions is a TRUE -> UNKNOWN
@@ -63,7 +66,8 @@ export KLEENE_MODEL=jev-1.13.0
 export KLEENE_API_KEY=...
 ```
 
-or a local Kev (`scripts/kev.sh` starts one on `:8009`):
+or a local Kev (`scripts/kev.sh` starts one on `:8009`). Both local scripts run the server under a
+memory guard and refuse to start next to another local judge; see "Local judges" in `AGENTS.md`:
 
 ```sh
 export KLEENE_BASE_URL=http://127.0.0.1:8009

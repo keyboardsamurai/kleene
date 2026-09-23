@@ -212,6 +212,8 @@ version of a real terms-of-service document and reapplies the accept threshold a
 calls. See [`demo/README.md`](demo/README.md).
 The second demo, `kleene.demo.kalah`, scores judges against each other on Kalah positions, with an engine as
 the truth for every question. See [`demo/kalah.md`](demo/kalah.md).
+The third demo, `kleene.demo.icd`, codes 100 synthetic multilingual clinical documents into ICD-10-CM categories
+and shows where UNKNOWN saves a wrong code. See [`demo/icd.md`](demo/icd.md).
 
 ## Inspiration
 

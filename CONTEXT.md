@@ -88,6 +88,20 @@ _Avoid_: cache, reapply, mock
 Ask a Judge again for fresh Evidence. Costs a model call.
 _Avoid_: retry, replay, re-run
 
+### Benchmarks (demos)
+
+**Label set**:
+The fixed list of labels a benchmark scores, each with its source. In the ICD bench, 51 ICD-10-CM categories with their official titles.
+_Avoid_: taxonomy, classes, code list
+
+**Fixture**:
+The committed, static set of documents or positions a benchmark asks about, the same for every Judge.
+_Avoid_: dataset, corpus, test set
+
+**Gold labels**:
+The labels a fixture item is scored against, fixed before any Judge runs. Not a Judge output.
+_Avoid_: ground truth, expected answers, annotations
+
 ### Checking (later)
 
 **Contract**:
