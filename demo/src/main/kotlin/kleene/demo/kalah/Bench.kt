@@ -9,6 +9,7 @@ import kleene.State
 import kleene.Verdict
 import kleene.ask
 import kleene.choose
+import kleene.demo.feelsEvidence
 import kleene.feels
 import kleene.score
 import kotlinx.serialization.Serializable
@@ -296,15 +297,11 @@ private fun moveTally(run: Run, policy: Policy): Tally {
 private fun feelsTally(run: Run, policy: Policy): Tally {
     val accepted = run.flatMap { (record, facts) ->
         ((record.again zip facts.again) + (record.takes zip facts.takes)).mapNotNull { (p, engine) ->
-            (feelsEvidence(p, record).decide(policy) as? Verdict.Accepted)?.let { it.value to engine }
+            (feelsEvidence(p, record.judge, record.model).decide(policy) as? Verdict.Accepted)?.let { it.value to engine }
         }
     }
     return Tally(accepted.size, accepted.count { (said, engine) -> said != engine })
 }
-
-/** ponytail: p(false) rebuilt as 1-p, as in promises.decide; decide reads p(true) only, so the verdict is exact. */
-private fun feelsEvidence(p: Double, record: Record) =
-    Evidence(Kind.FEELS, listOf(true, false), listOf(p, 1 - p), null, record.judge, record.model)
 
 private const val NONE = "–"
 

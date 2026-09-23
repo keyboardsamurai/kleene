@@ -10,18 +10,18 @@ import java.util.HexFormat
 
 /** One ICD-10-CM 3-character category: the official English [title] and our own demo [synonyms] per language. */
 @Serializable
-data class Label(val code: String, val chapter: Int, val title: String, val synonyms: Map<String, List<String>>)
+data class Category(val code: String, val chapter: Int, val title: String, val synonyms: Map<String, List<String>>)
 
 /** The committed label set, with the [source] of its titles and the note that its synonyms are not official. */
 @Serializable
-data class LabelSet(val source: String, val synonymsNote: String, val codes: List<Label>)
+data class LabelSet(val source: String, val synonymsNote: String, val codes: List<Category>)
 
 /** A gold code: the 3-character [category] the bench scores, and the full ICD-10-CM [subcode] kept for later. */
 @Serializable
 data class Gold(val category: String, val subcode: String)
 
 /**
- * One synthetic clinical document with its axis tags and gold labels. Only [text] is ever sent to a Judge.
+ * One synthetic clinical document with its axis tags and gold codes. Only [text] is ever sent to a Judge.
  * [hard] is null for an ordinary document; [principal] is null exactly when [codes] is empty.
  */
 @Serializable
@@ -42,17 +42,15 @@ data class Doc(
 private const val LABELS = "/kleene/demo/icd/labels.json"
 private const val FIXTURE = "/kleene/demo/icd/fixture.jsonl"
 
-private val json = Json { ignoreUnknownKeys = false }
-
 private fun resource(path: String): ByteArray =
     object {}.javaClass.getResourceAsStream(path)?.use { it.readBytes() } ?: error("missing resource $path")
 
 /** The committed label set. */
-fun labels(): LabelSet = json.decodeFromString(resource(LABELS).decodeToString())
+fun labels(): LabelSet = Json.decodeFromString(resource(LABELS).decodeToString())
 
 /** The committed fixture, in file order. */
 fun fixture(): List<Doc> =
-    resource(FIXTURE).decodeToString().lines().filter { it.isNotBlank() }.map { json.decodeFromString<Doc>(it) }
+    resource(FIXTURE).decodeToString().lines().filter { it.isNotBlank() }.map { Json.decodeFromString<Doc>(it) }
 
 /** The first 16 hex chars of sha256(label set bytes, fixture bytes): editing either one gives a new version. */
 fun fixtureVersion(): String {
@@ -62,5 +60,5 @@ fun fixtureVersion(): String {
     return HexFormat.of().formatHex(digest.digest()).take(16)
 }
 
-/** The [State] of [doc]: its text and nothing else, so no axis tag or gold label reaches the Judge. */
+/** The [State] of [doc]: its text and nothing else, so no axis tag or gold code reaches the Judge. */
 fun state(doc: Doc): State.Json = State.Json(buildJsonObject { put("document", doc.text) })

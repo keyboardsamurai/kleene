@@ -5,6 +5,7 @@ import kleene.Kind
 import kleene.Policy
 import kleene.Truth
 import kleene.Verdict
+import kleene.demo.feelsEvidence
 import kleene.truth
 import java.util.Locale
 
@@ -22,9 +23,10 @@ fun policyAt(acceptAt: Double): Policy = Policy(if (acceptAt == 0.5) Math.nextUp
 
 /**
  * The scores of one run on its documents at one [Policy]. A `feels` cell is [tp], [fp], [fn] or [tn] on the decided
- * [Truth], or [unknown]. Precision, recall and F1 treat UNKNOWN as not predicted; [macroF1] averages the codes with
- * at least one gold cell. [coverage] is decided over all cells, [accuracy] is on decided cells, [auc] is on raw p.
- * The principal: [top1Decided] on accepted answers, [abstainRate], and [top1All] with abstain counted as wrong.
+ * [Truth], or [unknown]. Precision, recall and F1 treat UNKNOWN as not predicted. [macroF1] averages only the codes
+ * with at least one gold cell in the scored documents, so a false positive on a code without gold does not lower it.
+ * [coverage] is decided over all cells, [accuracy] is on decided cells, [auc] is on raw p. The principal:
+ * [top1Decided] on accepted answers, [unknownRate], and [top1All] with UNKNOWN counted as wrong.
  * A ratio with a zero denominator is NaN. [cut] counts records whose request did not fit the judge's context.
  */
 data class Metrics(
@@ -42,7 +44,7 @@ data class Metrics(
     val accuracy: Double,
     val auc: Double,
     val top1Decided: Double,
-    val abstainRate: Double,
+    val unknownRate: Double,
     val top1All: Double,
     val cut: Int,
 )
@@ -55,7 +57,7 @@ fun metrics(scored: List<Pair<Record, Doc>>, codes: List<String>, policy: Policy
     val cells = scored.flatMap { (record, doc) ->
         codes.map { code ->
             val p = record.feels.getValue(code)
-            Cell(code, feelsEvidence(p, record).decide(policy).truth, p, code in doc.categories)
+            Cell(code, feelsEvidence(p, record.judge, record.model).decide(policy).truth, p, code in doc.categories)
         }
     }
     val tp = cells.count { it.gold && it.truth == Truth.TRUE }
@@ -80,7 +82,7 @@ fun metrics(scored: List<Pair<Record, Doc>>, codes: List<String>, policy: Policy
         accuracy = ratio(tp + tn, cells.size - unknown),
         auc = auc(cells),
         top1Decided = ratio(accepted.count { it }, accepted.size),
-        abstainRate = ratio(principals.size - accepted.size, principals.size),
+        unknownRate = ratio(principals.size - accepted.size, principals.size),
         top1All = ratio(accepted.count { it }, principals.size),
         cut = scored.count { (record, _) -> !record.fits },
     )
@@ -100,10 +102,6 @@ private fun auc(cells: List<Cell>): Double {
     return wins / (gold.size.toDouble() * other.size)
 }
 
-/** ponytail: p(false) rebuilt as 1-p, as in the Kalah bench; decide reads p(true) only, so the verdict is exact. */
-private fun feelsEvidence(p: Double, record: Record) =
-    Evidence(Kind.FEELS, listOf(true, false), listOf(p, 1 - p), null, record.judge, record.model)
-
 private fun principalEvidence(record: Record) =
     Evidence(Kind.CHOOSE, record.principal.keys.toList(), record.principal.values.toList(), record.confidence, record.judge, record.model)
 
@@ -112,13 +110,13 @@ private fun principalEvidence(record: Record) =
  * principal none), `most frequent (X)` (the most frequent gold category X as the only code and the principal; absent
  * when no document has a code) and
  * `keyword` (a code is TRUE if any of its synonyms, in any language, is in the text as a case-insensitive whole
- * word or phrase; the principal is the first matched code in label-set order, else none). The keyword baseline has
+ * word or phrase; the principal is the first matched code in label set order, else none). The keyword baseline has
  * no negation handling, on purpose: it is the bar a judge must clear to be worth a model call.
  */
-fun baselines(docs: List<Doc>, labels: List<Label>): Map<String, List<Record>> {
-    val codes = labels.map { it.code }
+fun baselines(docs: List<Doc>, categories: List<Category>): Map<String, List<Record>> {
+    val codes = categories.map { it.code }
     val frequent = docs.flatMap { it.categories }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-    val patterns = labels.associate { label -> label.code to label.synonyms.values.flatten().map(::wholeWord) }
+    val patterns = categories.associate { category -> category.code to category.synonyms.values.flatten().map(::wholeWord) }
     fun sure(id: String, trueCodes: List<String>, principal: String) = Record(
         id, "baseline", "baseline",
         codes.associateWith { if (it in trueCodes) 1.0 else 0.0 },
@@ -149,61 +147,71 @@ private val AXES: Map<String, (Record, Doc) -> String> = mapOf(
 )
 
 /**
- * The markdown leaderboard of [runs] (label to records) on [docs], reapplied at each of [acceptAts] with zero model
- * calls: the main table at 0.85 with the [baselines] (on the documents of every run), the sweep, then one table per
- * axis with, per run, "micro F1 · coverage · principal top-1 all" at 0.85.
+ * The markdown leaderboard of [runs] (label to records) on [docs], reapplied with zero model calls: the main table
+ * at the library default acceptAt ([Policy.acceptAt]) with the [baselines] (on the documents of every run), the
+ * sweep over [acceptAts], then one table per axis with a row per axis value and run, holding every metric of the
+ * main table.
  *
  * @throws IllegalArgumentException if a record's id is not in [docs].
  */
-fun leaderboard(runs: Map<String, List<Record>>, docs: List<Doc>, labels: List<Label>, acceptAts: List<Double>): String {
+fun leaderboard(runs: Map<String, List<Record>>, docs: List<Doc>, categories: List<Category>, acceptAts: List<Double>): String {
     val byId = docs.associateBy { it.id }
     val seen = runs.values.flatten().map { it.id }.toSet()
-    val all = runs + baselines(docs.filter { it.id in seen }, labels)
-    val scored = all.mapValues { (_, records) ->
+    val scored = (runs + baselines(docs.filter { it.id in seen }, categories)).mapValues { (_, records) ->
         records.map { record -> record to (byId[record.id] ?: throw IllegalArgumentException("${record.id} is not in the fixture")) }
     }
-    val codes = labels.map { it.code }
+    val codes = categories.map { it.code }
     val main = table(
-        listOf("run", "n", "micro P", "micro R", "micro F1", "macro F1", "coverage", "accuracy decided", "AUC",
-            "principal top-1 decided", "principal abstain", "principal top-1 all", "cut"),
+        listOf("run") + METRICS + "cut",
         scored.map { (label, run) ->
-            val m = metrics(run, codes, policyAt(HEADLINE))
             val judged = label in runs
-            listOf(label, "${m.n}", two(m.precision), two(m.recall), two(m.microF1), two(m.macroF1), pct(m.coverage),
-                pct(m.accuracy), if (judged) two(m.auc) else DASH, pct(m.top1Decided), pct(m.abstainRate), pct(m.top1All),
-                if (judged) "${m.cut}" else DASH)
+            listOf(label) + metricCells(metrics(run, codes, policyAt(HEADLINE)), judged) + if (judged) "${run.cut()}" else DASH
         },
     )
-    val sweep = table(
-        listOf("acceptAt", "run", "micro F1", "macro F1", "coverage", "accuracy decided", "principal top-1 decided",
-            "principal abstain", "principal top-1 all"),
-        acceptAts.flatMap { t ->
-            runs.keys.map { label ->
-                val m = metrics(scored.getValue(label), codes, policyAt(t))
-                listOf(two(t), label, two(m.microF1), two(m.macroF1), pct(m.coverage), pct(m.accuracy), pct(m.top1Decided),
-                    pct(m.abstainRate), pct(m.top1All))
+    val notes = "At acceptAt ${two(HEADLINE)}. Cells: ${codes.size} feels per document; UNKNOWN is not predicted, so it " +
+        "lowers recall and coverage, never precision. Baselines play no judge. model calls: 0"
+    val axes = AXES.map { (axis, key) -> "### By $axis\n\n" + axisTable(axis, key, scored, runs.keys, codes) }
+    return (listOf(main, notes, "### Sweep\n\n" + sweepTable(scored.filterKeys { it in runs }, codes, acceptAts)) + axes)
+        .joinToString("\n\n")
+}
+
+private typealias Run = List<Pair<Record, Doc>>
+
+private fun Run.cut(): Int = count { (record, _) -> !record.fits }
+
+/** The metric columns every table shares; AUC is a dash for a baseline, whose p is 0 or 1. */
+private val METRICS = listOf("n", "micro P", "micro R", "micro F1", "macro F1", "coverage", "accuracy decided", "AUC",
+    "principal top-1 decided", "principal unknown", "principal top-1 all")
+
+private fun metricCells(m: Metrics, judged: Boolean): List<String> =
+    listOf("${m.n}", two(m.precision), two(m.recall), two(m.microF1), two(m.macroF1), pct(m.coverage), pct(m.accuracy),
+        if (judged) two(m.auc) else DASH, pct(m.top1Decided), pct(m.unknownRate), pct(m.top1All))
+
+/** Every judged run at each of [acceptAts]; n and AUC do not change with acceptAt, so they are left out. */
+private fun sweepTable(judged: Map<String, Run>, codes: List<String>, acceptAts: List<Double>): String = table(
+    listOf("acceptAt", "run") + METRICS - setOf("n", "AUC"),
+    acceptAts.flatMap { t ->
+        judged.map { (label, run) ->
+            val m = metrics(run, codes, policyAt(t))
+            listOf(two(t), label, two(m.precision), two(m.recall), two(m.microF1), two(m.macroF1), pct(m.coverage),
+                pct(m.accuracy), pct(m.top1Decided), pct(m.unknownRate), pct(m.top1All))
+        }
+    },
+)
+
+/** One row per value of [axis] and run of [scored] at the headline acceptAt, skipping a run with no record there. */
+private fun axisTable(axis: String, key: (Record, Doc) -> String, scored: Map<String, Run>, judged: Set<String>, codes: List<String>): String {
+    val values = scored.values.flatten().map { (record, doc) -> key(record, doc) }.distinct().sorted()
+    return table(
+        listOf(axis, "run") + METRICS,
+        values.flatMap { value ->
+            scored.mapNotNull { (label, run) ->
+                val group = run.filter { (record, doc) -> key(record, doc) == value }
+                if (group.isEmpty()) null
+                else listOf(value, label) + metricCells(metrics(group, codes, policyAt(HEADLINE)), label in judged)
             }
         },
     )
-    val axes = AXES.map { (axis, key) ->
-        val values = scored.values.flatten().map { (record, doc) -> key(record, doc) }.distinct().sorted()
-        "### By $axis\n\n" + table(
-            listOf(axis, "n") + scored.keys,
-            values.map { value ->
-                val n = scored.filterKeys { it in runs }.values.flatten().filter { (record, doc) -> key(record, doc) == value }
-                    .map { (record, _) -> record.id }.distinct().size
-                listOf(value, "$n") + scored.values.map { run ->
-                    val group = run.filter { (record, doc) -> key(record, doc) == value }
-                    if (group.isEmpty()) DASH else metrics(group, codes, policyAt(HEADLINE)).let {
-                        "${two(it.microF1)} · ${pct(it.coverage)} · ${pct(it.top1All)}"
-                    }
-                }
-            },
-        )
-    }
-    val notes = "At acceptAt ${two(HEADLINE)}. Cells: ${codes.size} feels per document; UNKNOWN is not predicted, so it " +
-        "lowers recall and coverage, never precision. Baselines play no judge. model calls: 0"
-    return (listOf(main, notes, "### Sweep\n\n$sweep") + axes).joinToString("\n\n")
 }
 
 private const val DASH = "–"
