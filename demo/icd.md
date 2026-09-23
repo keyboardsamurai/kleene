@@ -82,7 +82,9 @@ export KLEENE_API_KEY=...
 or a local Kev (`scripts/kev.sh` starts one on `:8009`) or a local Laya (`scripts/laya.sh` starts one on `:8010`,
 Apple Silicon only; `LAYA_MODEL=aac6fef/laya-mlx scripts/laya.sh` starts the English checkpoint). Both scripts
 run the server under a memory guard. Start only one local judge at a time, and read "Local judges" in
-[`AGENTS.md`](../AGENTS.md#local-judges) first.
+[`AGENTS.md`](../AGENTS.md#local-judges) first. Kev does not run this bench at the `kev.sh` default caps (see
+Results). It ran with
+`MEMGUARD_MAX_GB=64 PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.55 PYTORCH_MPS_LOW_WATERMARK_RATIO=0.5 scripts/kev.sh`.
 
 ```sh
 export KLEENE_BASE_URL=http://127.0.0.1:8010   # :8009 for Kev
@@ -107,7 +109,7 @@ checkpoints report the same judge id:
 mvn -q exec:java -Dexec.mainClass=kleene.demo.icd.MainKt -Dexec.args="log --out out/icd/jev-1.13.0.jsonl"
 mvn -q exec:java -Dexec.mainClass=kleene.demo.icd.MainKt -Dexec.args="log --out out/icd/laya.jsonl --cut out/icd/cut-laya.txt --timeout 300"
 mvn -q exec:java -Dexec.mainClass=kleene.demo.icd.MainKt -Dexec.args="log --out out/icd/laya-en.jsonl --cut out/icd/cut-laya-en.txt --timeout 300"
-mvn -q exec:java -Dexec.mainClass=kleene.demo.icd.MainKt -Dexec.args="log --out out/icd/kev-4b.jsonl --timeout 600"
+mvn -q exec:java -Dexec.mainClass=kleene.demo.icd.MainKt -Dexec.args="log --out out/icd/kev-4b.jsonl --timeout 900"
 ```
 
 Score every run side by side:
@@ -161,18 +163,22 @@ Mac. `rank` made no model call, and two `rank` runs printed the same output, byt
 
 | | `jev-1.13.0` | `kev-4b` | Laya multilingual | Laya English |
 |---|---|---|---|---|
-| records | 100 | 4 | 100 | 100 |
-| errors / retries | none recorded | HTTP 500 on `icd-005` in 2 runs, each 1 try and 2 retries | 0 / 0 | 0 / 0 |
-| time | not recorded | stopped at `icd-005` | 0.25 to 0.7 s per request | 134 s for 100 documents |
-| peak memory of the server | – (cloud) | 33.1 GiB | 3.0 GiB | 3.1 GiB |
+| records | 100 | 100 | 100 | 100 |
+| errors / retries | none recorded | 0 / 0 at the 64 GiB cap; at the 40 GiB cap, HTTP 500 on `icd-005` in 2 runs, each 1 try and 2 retries | 0 / 0 | 0 / 0 |
+| time | not recorded | 2 h 33 min for 96 documents, about 96 s per document | 0.25 to 0.7 s per request | 134 s for 100 documents |
+| peak memory of the server | – (cloud) | 58.8 GiB | 3.0 GiB | 3.1 GiB |
 | documents marked `fits = false` | 0 | 0 | 0 | 62 |
 
-**Kev stopped after 4 documents.** On `icd-005` (1123 characters, not a long document) the Kev server failed
-twice with `RuntimeError: MPS backend out of memory (MPS allocated: 29.80-31.94 GiB, max allowed: 32.26 GiB)` in
-`torch_chunk_gated_delta_rule`. That limit is the one `scripts/kev.sh` sets
-(`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3`). A 52-question ICD request needs more than that on Kev. Without a limit
-it held 58 to 60 GB. The Kev rows below cover `icd-001` to `icd-004` only, and none of them is a hard document.
-They show that Kev runs on this bench, not how well it codes.
+**Kev needs a 64 GiB cap.** At the `scripts/kev.sh` defaults (guard cap 40 GiB,
+`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3`, about 32 GiB), Kev logged `icd-001` to `icd-004` and then failed twice on
+`icd-005` (1123 characters, not a long document) with `RuntimeError: MPS backend out of memory (MPS allocated:
+29.80-31.94 GiB, max allowed: 32.26 GiB)` in `torch_chunk_gated_delta_rule`. A 52-question ICD request needs more
+than that on Kev. The operator approved one retry with a guard cap of 64 GiB, half the RAM and the ceiling in the
+rules, and an MPS ratio of 0.55 (about 59 GiB). That run resumed at `icd-005` and logged the other 96 documents
+with no error, no retry and no guard kill. While it computed, the server held 36.5 to 58.8 GiB (median 54.6 GiB,
+22.5 GiB idle after load), 5.2 GiB under the cap at the peak, and the system never had less than 70 GiB free.
+So Kev runs this bench on this Mac, with little margin, at about 96 s per document against less than 1 s for
+Laya.
 
 **Laya context window.** The state, the instructions and the options share 1024 tokens on the multilingual
 checkpoint and 512 on the English one (ADR-0006). `scripts/icd-laya-cut.py` counted them with each checkpoint's
@@ -191,7 +197,7 @@ the 52 options to 4 tokens each. Laya picks among bare codes, not among codes wi
 | run | n | micro P | micro R | micro F1 | macro F1 | coverage | accuracy decided | AUC | principal top-1 decided | principal unknown | principal top-1 all | cut |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | jev-1.13.0 | 100 | 0.98 | 0.56 | 0.72 | 0.70 | 96% | 100% | 1.00 | 95% | 9% | 86% | 0 |
-| kev-4b | 4 | 1.00 | 0.56 | 0.71 | 0.56 | 90% | 99% | 0.98 | – | 100% | 0% | 0 |
+| kev-4b | 100 | 0.94 | 0.54 | 0.68 | 0.71 | 90% | 100% | 0.99 | 100% | 90% | 10% | 0 |
 | laya | 100 | 0.06 | 0.45 | 0.10 | 0.11 | 57% | 42% | 0.60 | 0% | 98% | 0% | 0 |
 | laya-en | 100 | 0.09 | 0.22 | 0.12 | 0.10 | 43% | 75% | 0.67 | 0% | 90% | 0% | 62 |
 | baseline: always empty | 100 | – | 0.00 | 0.00 | 0.00 | 100% | 96% | – | 5% | 0% | 5% | – |
@@ -205,31 +211,31 @@ At `acceptAt` 0.85, the library default. `laya` is the multilingual checkpoint, 
 | acceptAt | run | micro P | micro R | micro F1 | macro F1 | coverage | accuracy decided | principal top-1 decided | principal unknown | principal top-1 all |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 0.50 | jev-1.13.0 | 0.85 | 0.83 | 0.84 | 0.88 | 100% | 99% | 93% | 0% | 93% |
-| 0.50 | kev-4b | 0.60 | 0.67 | 0.63 | 0.67 | 100% | 97% | 100% | 0% | 100% |
+| 0.50 | kev-4b | 0.67 | 0.76 | 0.71 | 0.81 | 100% | 97% | 96% | 21% | 76% |
 | 0.50 | laya | 0.05 | 0.75 | 0.10 | 0.11 | 100% | 43% | 6% | 82% | 1% |
 | 0.50 | laya-en | 0.07 | 0.66 | 0.13 | 0.12 | 100% | 61% | 9% | 66% | 3% |
 | 0.60 | jev-1.13.0 | 0.89 | 0.77 | 0.83 | 0.84 | 99% | 99% | 95% | 2% | 93% |
-| 0.60 | kev-4b | 0.67 | 0.67 | 0.67 | 0.67 | 99% | 97% | 100% | 0% | 100% |
+| 0.60 | kev-4b | 0.75 | 0.70 | 0.72 | 0.79 | 98% | 98% | 97% | 39% | 59% |
 | 0.60 | laya | 0.06 | 0.70 | 0.10 | 0.12 | 90% | 42% | 9% | 89% | 1% |
 | 0.60 | laya-en | 0.07 | 0.61 | 0.13 | 0.12 | 90% | 62% | 8% | 74% | 2% |
 | 0.70 | jev-1.13.0 | 0.94 | 0.72 | 0.81 | 0.81 | 98% | 100% | 95% | 4% | 91% |
-| 0.70 | kev-4b | 1.00 | 0.67 | 0.80 | 0.67 | 94% | 99% | 100% | 25% | 75% |
+| 0.70 | kev-4b | 0.83 | 0.64 | 0.72 | 0.77 | 95% | 99% | 100% | 62% | 38% |
 | 0.70 | laya | 0.06 | 0.65 | 0.11 | 0.12 | 78% | 42% | 14% | 93% | 1% |
 | 0.70 | laya-en | 0.08 | 0.50 | 0.14 | 0.13 | 77% | 66% | 10% | 79% | 2% |
 | 0.80 | jev-1.13.0 | 0.96 | 0.60 | 0.74 | 0.72 | 97% | 100% | 95% | 8% | 87% |
-| 0.80 | kev-4b | 1.00 | 0.67 | 0.80 | 0.67 | 93% | 99% | 100% | 75% | 25% |
+| 0.80 | kev-4b | 0.93 | 0.57 | 0.71 | 0.74 | 93% | 100% | 100% | 83% | 17% |
 | 0.80 | laya | 0.06 | 0.54 | 0.11 | 0.12 | 65% | 42% | 25% | 96% | 1% |
 | 0.80 | laya-en | 0.09 | 0.34 | 0.14 | 0.12 | 57% | 71% | 0% | 87% | 0% |
 | 0.85 | jev-1.13.0 | 0.98 | 0.56 | 0.72 | 0.70 | 96% | 100% | 95% | 9% | 86% |
-| 0.85 | kev-4b | 1.00 | 0.56 | 0.71 | 0.56 | 90% | 99% | – | 100% | 0% |
+| 0.85 | kev-4b | 0.94 | 0.54 | 0.68 | 0.71 | 90% | 100% | 100% | 90% | 10% |
 | 0.85 | laya | 0.06 | 0.45 | 0.10 | 0.11 | 57% | 42% | 0% | 98% | 0% |
 | 0.85 | laya-en | 0.09 | 0.22 | 0.12 | 0.10 | 43% | 75% | 0% | 90% | 0% |
 | 0.90 | jev-1.13.0 | 0.99 | 0.44 | 0.61 | 0.56 | 94% | 100% | 95% | 14% | 82% |
-| 0.90 | kev-4b | 1.00 | 0.44 | 0.62 | 0.44 | 87% | 100% | – | 100% | 0% |
+| 0.90 | kev-4b | 0.99 | 0.45 | 0.62 | 0.65 | 85% | 100% | 100% | 98% | 2% |
 | 0.90 | laya | 0.06 | 0.40 | 0.11 | 0.11 | 46% | 42% | – | 100% | 0% |
 | 0.90 | laya-en | 0.07 | 0.10 | 0.09 | 0.06 | 26% | 78% | 0% | 94% | 0% |
 | 0.95 | jev-1.13.0 | 1.00 | 0.29 | 0.45 | 0.38 | 92% | 100% | 95% | 17% | 79% |
-| 0.95 | kev-4b | 1.00 | 0.22 | 0.36 | 0.22 | 75% | 100% | – | 100% | 0% |
+| 0.95 | kev-4b | 0.98 | 0.28 | 0.44 | 0.44 | 68% | 100% | – | 100% | 0% |
 | 0.95 | laya | 0.06 | 0.30 | 0.10 | 0.10 | 34% | 42% | – | 100% | 0% |
 | 0.95 | laya-en | 0.10 | 0.06 | 0.07 | 0.04 | 10% | 78% | 0% | 96% | 0% |
 
@@ -237,56 +243,56 @@ The baselines decide every cell, so they do not change with `acceptAt`.
 
 ### Per axis
 
-Each cell is micro F1 / coverage / principal top-1 all, at 0.85. Kev is left out (4 documents). `rank` prints
-the full tables, with every metric per axis value and a row per baseline.
+Each cell is micro F1 / coverage / principal top-1 all, at 0.85. `rank` prints the full tables, with every
+metric per axis value and a row per baseline.
 
-| language | n | jev | laya | laya-en | keyword |
-| --- | --- | --- | --- | --- | --- |
-| de | 13 | 0.62 / 95% / 69% | 0.11 / 57% / 0% | 0.10 / 35% / 0% | 0.58 / 100% / 31% |
-| en | 15 | 0.76 / 96% / 93% | 0.11 / 45% / 0% | 0.08 / 50% / 0% | 0.76 / 100% / 47% |
-| es | 13 | 0.79 / 95% / 100% | 0.11 / 58% / 0% | 0.15 / 47% / 0% | 0.67 / 100% / 31% |
-| fr | 13 | 0.81 / 98% / 92% | 0.10 / 52% / 0% | 0.18 / 27% / 0% | 0.75 / 100% / 54% |
-| it | 13 | 0.63 / 96% / 77% | 0.08 / 69% / 0% | 0.11 / 52% / 0% | 0.80 / 100% / 46% |
-| mixed | 7 | 0.71 / 96% / 100% | 0.10 / 57% / 0% | 0.19 / 33% / 0% | 0.73 / 100% / 29% |
-| nl | 13 | 0.70 / 94% / 77% | 0.09 / 59% / 0% | 0.15 / 46% / 0% | 0.57 / 100% / 46% |
-| pt | 13 | 0.67 / 96% / 85% | 0.11 / 63% / 0% | 0.09 / 45% / 0% | 0.76 / 100% / 46% |
+| language | n | jev | kev | laya | laya-en | keyword |
+| --- | --- | --- | --- | --- | --- | --- |
+| de | 13 | 0.62 / 95% / 69% | 0.65 / 90% / 23% | 0.11 / 57% / 0% | 0.10 / 35% / 0% | 0.58 / 100% / 31% |
+| en | 15 | 0.76 / 96% / 93% | 0.79 / 92% / 7% | 0.11 / 45% / 0% | 0.08 / 50% / 0% | 0.76 / 100% / 47% |
+| es | 13 | 0.79 / 95% / 100% | 0.75 / 86% / 15% | 0.11 / 58% / 0% | 0.15 / 47% / 0% | 0.67 / 100% / 31% |
+| fr | 13 | 0.81 / 98% / 92% | 0.77 / 90% / 8% | 0.10 / 52% / 0% | 0.18 / 27% / 0% | 0.75 / 100% / 54% |
+| it | 13 | 0.63 / 96% / 77% | 0.58 / 91% / 0% | 0.08 / 69% / 0% | 0.11 / 52% / 0% | 0.80 / 100% / 46% |
+| mixed | 7 | 0.71 / 96% / 100% | 0.64 / 91% / 29% | 0.10 / 57% / 0% | 0.19 / 33% / 0% | 0.73 / 100% / 29% |
+| nl | 13 | 0.70 / 94% / 77% | 0.56 / 88% / 0% | 0.09 / 59% / 0% | 0.15 / 46% / 0% | 0.57 / 100% / 46% |
+| pt | 13 | 0.67 / 96% / 85% | 0.65 / 90% / 8% | 0.11 / 63% / 0% | 0.09 / 45% / 0% | 0.76 / 100% / 46% |
 
-| type | n | jev | laya | laya-en | keyword |
-| --- | --- | --- | --- | --- | --- |
-| ER triage | 10 | 0.72 / 96% / 90% | 0.11 / 58% / 0% | 0.08 / 47% / 0% | 0.61 / 100% / 50% |
-| GP note | 10 | 0.76 / 95% / 100% | 0.09 / 71% / 0% | 0.13 / 55% / 0% | 0.62 / 100% / 50% |
-| discharge summary | 10 | 0.74 / 95% / 100% | 0.11 / 53% / 0% | 0.14 / 40% / 0% | 0.64 / 100% / 40% |
-| insurance claim note | 10 | 0.64 / 97% / 80% | 0.10 / 54% / 0% | 0.17 / 38% / 0% | 0.80 / 100% / 50% |
-| lab report | 10 | 0.65 / 96% / 70% | 0.12 / 55% / 0% | 0.08 / 48% / 0% | 0.70 / 100% / 20% |
-| nursing note | 10 | 0.84 / 96% / 100% | 0.13 / 49% / 0% | 0.14 / 54% / 0% | 0.75 / 100% / 10% |
-| pathology report | 10 | 0.55 / 95% / 80% | 0.10 / 69% / 0% | 0.13 / 33% / 0% | 0.68 / 100% / 30% |
-| patient message | 10 | 0.64 / 95% / 90% | 0.05 / 37% / 0% | 0.00 / 38% / 0% | 0.73 / 100% / 70% |
-| radiology report | 10 | 0.81 / 96% / 60% | 0.10 / 66% / 0% | 0.18 / 38% / 0% | 0.81 / 100% / 50% |
-| referral letter | 10 | 0.69 / 95% / 90% | 0.07 / 57% / 0% | 0.18 / 36% / 0% | 0.68 / 100% / 50% |
+| type | n | jev | kev | laya | laya-en | keyword |
+| --- | --- | --- | --- | --- | --- | --- |
+| ER triage | 10 | 0.72 / 96% / 90% | 0.70 / 90% / 0% | 0.11 / 58% / 0% | 0.08 / 47% / 0% | 0.61 / 100% / 50% |
+| GP note | 10 | 0.76 / 95% / 100% | 0.77 / 93% / 0% | 0.09 / 71% / 0% | 0.13 / 55% / 0% | 0.62 / 100% / 50% |
+| discharge summary | 10 | 0.74 / 95% / 100% | 0.74 / 89% / 10% | 0.11 / 53% / 0% | 0.14 / 40% / 0% | 0.64 / 100% / 40% |
+| insurance claim note | 10 | 0.64 / 97% / 80% | 0.48 / 92% / 10% | 0.10 / 54% / 0% | 0.17 / 38% / 0% | 0.80 / 100% / 50% |
+| lab report | 10 | 0.65 / 96% / 70% | 0.80 / 93% / 0% | 0.12 / 55% / 0% | 0.08 / 48% / 0% | 0.70 / 100% / 20% |
+| nursing note | 10 | 0.84 / 96% / 100% | 0.79 / 90% / 10% | 0.13 / 49% / 0% | 0.14 / 54% / 0% | 0.75 / 100% / 10% |
+| pathology report | 10 | 0.55 / 95% / 80% | 0.63 / 90% / 0% | 0.10 / 69% / 0% | 0.13 / 33% / 0% | 0.68 / 100% / 30% |
+| patient message | 10 | 0.64 / 95% / 90% | 0.64 / 79% / 30% | 0.05 / 37% / 0% | 0.00 / 38% / 0% | 0.73 / 100% / 70% |
+| radiology report | 10 | 0.81 / 96% / 60% | 0.67 / 91% / 10% | 0.10 / 66% / 0% | 0.18 / 38% / 0% | 0.81 / 100% / 50% |
+| referral letter | 10 | 0.69 / 95% / 90% | 0.50 / 90% / 30% | 0.07 / 57% / 0% | 0.18 / 36% / 0% | 0.68 / 100% / 50% |
 
-| completeness | n | jev | laya | laya-en | keyword |
-| --- | --- | --- | --- | --- | --- |
-| full | 40 | 0.72 / 95% / 95% | 0.11 / 56% / 0% | 0.16 / 38% / 0% | 0.66 / 100% / 38% |
-| terse | 25 | 0.80 / 97% / 96% | 0.11 / 53% / 0% | 0.15 / 49% / 0% | 0.82 / 100% / 60% |
-| truncated | 15 | 0.83 / 95% / 100% | 0.10 / 60% / 0% | 0.13 / 45% / 0% | 0.73 / 100% / 40% |
-| no-diagnosis | 20 | 0.35 / 96% / 45% | 0.07 / 60% / 0% | 0.00 / 41% / 0% | 0.58 / 100% / 30% |
+| completeness | n | jev | kev | laya | laya-en | keyword |
+| --- | --- | --- | --- | --- | --- | --- |
+| full | 40 | 0.72 / 95% / 95% | 0.68 / 90% / 18% | 0.11 / 56% / 0% | 0.16 / 38% / 0% | 0.66 / 100% / 38% |
+| terse | 25 | 0.80 / 97% / 96% | 0.80 / 88% / 0% | 0.11 / 53% / 0% | 0.15 / 49% / 0% | 0.82 / 100% / 60% |
+| truncated | 15 | 0.83 / 95% / 100% | 0.75 / 90% / 13% | 0.10 / 60% / 0% | 0.13 / 45% / 0% | 0.73 / 100% / 40% |
+| no-diagnosis | 20 | 0.35 / 96% / 45% | 0.38 / 91% / 5% | 0.07 / 60% / 0% | 0.00 / 41% / 0% | 0.58 / 100% / 30% |
 
-| provenance | n | jev | laya | laya-en | keyword |
-| --- | --- | --- | --- | --- | --- |
-| clinician | 53 | 0.73 / 96% / 85% | 0.10 / 53% / 0% | 0.12 / 43% / 0% | 0.69 / 100% / 38% |
-| dictation | 10 | 0.69 / 95% / 90% | 0.09 / 90% / 0% | 0.12 / 58% / 0% | 0.64 / 100% / 50% |
-| machine-translated | 12 | 0.72 / 96% / 75% | 0.12 / 53% / 0% | 0.15 / 33% / 0% | 0.75 / 100% / 33% |
-| ocr | 15 | 0.72 / 96% / 93% | 0.11 / 67% / 0% | 0.13 / 41% / 0% | 0.69 / 100% / 40% |
-| patient | 10 | 0.64 / 95% / 90% | 0.05 / 37% / 0% | 0.00 / 38% / 0% | 0.73 / 100% / 70% |
+| provenance | n | jev | kev | laya | laya-en | keyword |
+| --- | --- | --- | --- | --- | --- | --- |
+| clinician | 53 | 0.73 / 96% / 85% | 0.69 / 90% / 8% | 0.10 / 53% / 0% | 0.12 / 43% / 0% | 0.69 / 100% / 38% |
+| dictation | 10 | 0.69 / 95% / 90% | 0.58 / 92% / 0% | 0.09 / 90% / 0% | 0.12 / 58% / 0% | 0.64 / 100% / 50% |
+| machine-translated | 12 | 0.72 / 96% / 75% | 0.68 / 93% / 8% | 0.12 / 53% / 0% | 0.15 / 33% / 0% | 0.75 / 100% / 33% |
+| ocr | 15 | 0.72 / 96% / 93% | 0.75 / 91% / 13% | 0.11 / 67% / 0% | 0.13 / 41% / 0% | 0.69 / 100% / 40% |
+| patient | 10 | 0.64 / 95% / 90% | 0.64 / 79% / 30% | 0.05 / 37% / 0% | 0.00 / 38% / 0% | 0.73 / 100% / 70% |
 
-| hard | n | jev | laya | laya-en | keyword |
-| --- | --- | --- | --- | --- | --- |
-| none | 80 | 0.71 / 96% / 85% | 0.10 / 58% / 0% | 0.11 / 43% / 0% | 0.73 / 100% / 43% |
-| negation | 5 | 0.78 / 95% / 80% | 0.10 / 62% / 0% | 0.18 / 41% / 0% | 0.71 / 100% / 20% |
-| history | 4 | 0.71 / 95% / 100% | 0.12 / 64% / 0% | 0.09 / 53% / 0% | 0.62 / 100% / 25% |
-| family | 3 | 0.77 / 93% / 100% | 0.12 / 83% / 0% | 0.22 / 61% / 0% | 0.42 / 100% / 0% |
-| suspected | 3 | 0.67 / 95% / 67% | 0.00 / 36% / 0% | 0.14 / 53% / 0% | 0.50 / 100% / 67% |
-| no-code | 5 | – / 100% / 100% | 0.00 / 36% / 0% | 0.00 / 15% / 0% | 0.00 / 100% / 80% |
+| hard | n | jev | kev | laya | laya-en | keyword |
+| --- | --- | --- | --- | --- | --- | --- |
+| none | 80 | 0.71 / 96% / 85% | 0.69 / 89% / 10% | 0.10 / 58% / 0% | 0.11 / 43% / 0% | 0.73 / 100% / 43% |
+| negation | 5 | 0.78 / 95% / 80% | 0.80 / 92% / 40% | 0.10 / 62% / 0% | 0.18 / 41% / 0% | 0.71 / 100% / 20% |
+| history | 4 | 0.71 / 95% / 100% | 0.63 / 92% / 0% | 0.12 / 64% / 0% | 0.09 / 53% / 0% | 0.62 / 100% / 25% |
+| family | 3 | 0.77 / 93% / 100% | 0.62 / 86% / 0% | 0.12 / 83% / 0% | 0.22 / 61% / 0% | 0.42 / 100% / 0% |
+| suspected | 3 | 0.67 / 95% / 67% | 0.50 / 90% / 0% | 0.00 / 36% / 0% | 0.14 / 53% / 0% | 0.50 / 100% / 67% |
+| no-code | 5 | – / 100% / 100% | – / 95% / 0% | 0.00 / 36% / 0% | 0.00 / 15% / 0% | 0.00 / 100% / 80% |
 
 On the no-code documents there is no gold cell, so micro F1 is 0.00 for a run with a TRUE cell and "–" for a run
 with none.
@@ -302,17 +308,19 @@ A trap cell is a code that the keyword baseline marks TRUE on a hard document bu
 a negated, past, family or suspected condition. The 20 hard documents have 28 trap cells. The keyword baseline
 is wrong on all 28. From `facts.md` (a script over the logs and the fixture, zero model calls), at 0.85:
 
-| hard kind | documents | trap cells | jev TRUE / UNKNOWN / FALSE | laya | laya-en |
-|---|---|---|---|---|---|
-| negation | 5 | 7 | 0 / 1 / 6 | 4 / 3 / 0 | 1 / 4 / 2 |
-| history | 4 | 7 | 0 / 0 / 7 | 5 / 2 / 0 | 2 / 4 / 1 |
-| family | 3 | 7 | 0 / 2 / 5 | 6 / 1 / 0 | 2 / 3 / 2 |
-| suspected | 3 | 6 | 0 / 2 / 4 | 1 / 5 / 0 | 2 / 3 / 1 |
-| no-code | 5 | 1 | 0 / 0 / 1 | 0 / 1 / 0 | 0 / 1 / 0 |
-| all | 20 | 28 | 0 / 5 / 23 | 16 / 12 / 0 | 7 / 15 / 6 |
+| hard kind | documents | trap cells | jev TRUE / UNKNOWN / FALSE | kev | laya | laya-en |
+|---|---|---|---|---|---|---|
+| negation | 5 | 7 | 0 / 1 / 6 | 0 / 1 / 6 | 4 / 3 / 0 | 1 / 4 / 2 |
+| history | 4 | 7 | 0 / 0 / 7 | 0 / 1 / 6 | 5 / 2 / 0 | 2 / 4 / 1 |
+| family | 3 | 7 | 0 / 2 / 5 | 1 / 2 / 4 | 6 / 1 / 0 | 2 / 3 / 2 |
+| suspected | 3 | 6 | 0 / 2 / 4 | 0 / 3 / 3 | 1 / 5 / 0 | 2 / 3 / 1 |
+| no-code | 5 | 1 | 0 / 0 / 1 | 0 / 1 / 0 | 0 / 1 / 0 | 0 / 1 / 0 |
+| all | 20 | 28 | 0 / 5 / 23 | 1 / 8 / 19 | 16 / 12 / 0 | 7 / 15 / 6 |
 
-On the 5 no-code documents, Jev marks no code TRUE and chooses `none of these` on all 5. Laya multilingual marks
-31 codes TRUE there and Laya English 6. Neither Laya checkpoint chooses `none of these` at 0.85 on any of them.
+On the 5 no-code documents, Jev marks no code TRUE and chooses `none of these` on all 5. Kev marks no code TRUE
+there either. Its top option is `none of these` on all 5, but with p 0.32 to 0.53, so its principal is UNKNOWN on
+all 5 at 0.85. Laya multilingual marks 31 codes TRUE there and Laya English 6. Neither Laya checkpoint chooses
+`none of these` at 0.85 on any of them.
 
 ### What UNKNOWN saves
 
@@ -321,55 +329,72 @@ Between `acceptAt` 0.5 and 0.85, a cell with p > 0.5 either stays TRUE or become
 | judge | documents | wrong TRUE at 0.5 | UNKNOWN at 0.85 | still TRUE at 0.85 | right TRUE at 0.5 | lost to UNKNOWN at 0.85 |
 |---|---|---|---|---|---|---|
 | jev-1.13.0 | 100 | 31 | 28 | 3 | 180 | 57 |
-| kev-4b | 4 | 4 | 4 | 0 | 6 | 1 |
+| kev-4b | 100 | 81 | 74 | 7 | 166 | 49 |
 | laya | 100 | 2870 | 1198 | 1672 | 164 | 65 |
 | laya-en | 100 | 1934 | 1435 | 499 | 144 | 97 |
 
 ### Findings
 
-1. **Only Jev beats the keyword baseline, and at 0.85 only on precision.** At 0.85, Jev has micro F1 0.72 against
-   0.70 for `keyword`, with precision 0.98 against 0.67 and recall 0.56 against 0.73. At 0.5 it beats `keyword`
-   on all three (0.85 / 0.83 / 0.84). Its micro F1 is highest at 0.5 and falls at each step of the sweep, while its
-   precision goes from 0.85 to 1.00. For Jev, the library default is a precision setting.
+1. **Jev and Kev beat the keyword baseline on precision; on micro F1, Kev matches it only below 0.85.** At 0.85, Jev
+   has micro F1 0.72 against 0.70 for `keyword`, with precision 0.98 against 0.67 and recall 0.56 against 0.73. At
+   0.5 it beats `keyword` on all three (0.85 / 0.83 / 0.84). Its micro F1 is highest at 0.5 and falls at each step
+   of the sweep, while its precision goes from 0.85 to 1.00. For Jev, the library default is a precision setting.
+   Kev at 0.85 has precision 0.94, recall 0.54 and micro F1 0.68, below `keyword`, but macro F1 0.71 against 0.68.
+   Its micro F1 stays between 0.71 and 0.72 from 0.5 to 0.8 (at 0.5: 0.67 / 0.76 / 0.71) and falls above that.
 2. **For Jev, UNKNOWN turns wrong codes into UNKNOWN, at a cost in right ones.** From 0.5 to 0.85, 28 of its 31
    wrong TRUEs become UNKNOWN, and 57 of its 180 right TRUEs do too. None of the 3 wrong TRUEs left at 0.85 is on
    a hard document. In each, the text points to the code but the gold labels leave it out: K35 (appendicitis) on
    `icd-025`, a no-diagnosis triage note whose gold codes are the symptoms; R51 (headache) on `icd-027`, a known
-   migraine; M54 (back pain) on `icd-079`, a vertebral fracture.
+   migraine; M54 (back pain) on `icd-079`, a vertebral fracture. Kev has more wrong TRUEs at 0.5 (81) and
+   UNKNOWN takes 74 of them out, at a cost of 49 of its 166 right TRUEs. Of the 7 left at 0.85, K35 on `icd-025`
+   and R51 on `icd-027` are the same as Jev's, and 2 are on hard documents: R07 on `icd-013` (family, 0.88) and R10
+   on `icd-051` (negation, 0.85).
 3. **Jev's lost recall is in the symptom and history codes.** At 0.85, Jev accepts 115 of 152 gold cells of the
    other codes, but 7 of 31 R cells and 1 of 35 Z cells. All gold codes of the 20 no-diagnosis documents are R or
    Z codes, and there Jev has its lowest micro F1 (0.35, `keyword` 0.58) and principal top-1 all (45%). The
    question asks for "a current diagnosis of this patient". A symptom, a past condition or a relative's condition
-   does not match those words well. This run cannot tell whether the wording or the model causes the gap.
-4. **On the traps, Jev says FALSE; UNKNOWN does little of the work.** The keyword baseline is wrong on all 28 trap
-   cells. Jev marks none TRUE: 23 FALSE and 5 UNKNOWN. Only 1 of the 28 had p > 0.5 (R07 on `icd-013`, 0.56), so
-   at 0.5 Jev would be wrong on 1. Laya English marks 7 TRUE, and UNKNOWN catches 9 more that had p > 0.5. Laya
-   multilingual marks 16 TRUE and none FALSE; UNKNOWN catches 4 of its 20 with p > 0.5.
-5. **Jev reads the principal diagnosis; Laya does not.** Jev's top option is right on 93 of 100 documents. At 0.85
-   it is right on 95% of the documents where it decides and UNKNOWN on 9%, so principal top-1 all is 86%,
-   against 42% for `keyword`. From 0.85 up, no decided Laya principal is right, and principal top-1 all is at
-   most 3% (English, at 0.5) at any `acceptAt`. Laya multilingual's top option is `none of these` on 75
-   documents. Laya English's top option is E78 on 35 and A09, the first option, on 27. This agrees with the
-   option clipping: Laya sees 51 bare codes and no titles.
+   does not match those words well. Kev shows the same gap: 105 of 152 for the other codes, 8 of 31 R and 4 of 35
+   Z, and micro F1 0.38 on the no-diagnosis documents. The gap is thus not particular to one model, which points
+   to the wording or the conventions. This run does not test either.
+4. **On the traps, Jev and Kev say FALSE; UNKNOWN does little of the work.** The keyword baseline is wrong on all 28
+   trap cells. Jev marks none TRUE: 23 FALSE and 5 UNKNOWN. Only 1 of the 28 had p > 0.5 (R07 on `icd-013`, 0.56),
+   so at 0.5 Jev would be wrong on 1. Kev marks 1 TRUE, 8 UNKNOWN and 19 FALSE. Its 1 trap with p > 0.5 is the same
+   cell, R07 on `icd-013`, at 0.88, so UNKNOWN catches none of Kev's traps. Laya English marks 7 TRUE, and UNKNOWN
+   catches 9 more that had p > 0.5. Laya multilingual marks 16 TRUE and none FALSE; UNKNOWN catches 4 of its 20 with
+   p > 0.5.
+5. **Jev and Kev read the principal diagnosis; Laya does not.** Jev's top option is right on 93 of 100 documents. At
+   0.85 it is right on 95% of the documents where it decides and UNKNOWN on 9%, so principal top-1 all is 86%,
+   against 42% for `keyword`. Kev's top option is right on 92 of 100, but its top p is at most 0.93 (median 0.64)
+   and reaches 0.85 on 10 documents only. So at 0.85 Kev's principal is right on all 10 it decides and UNKNOWN on
+   90%, and principal top-1 all is 10%. At 0.5 it is 76%. From 0.85 up, no decided Laya principal is right, and
+   principal top-1 all is at most 3% (English, at 0.5) at any `acceptAt`. Laya multilingual's top option is `none of
+   these` on 75 documents. Laya English's top option is E78 on 35 and A09, the first option, on 27. This agrees with
+   the option clipping: Laya sees 51 bare codes and no titles.
 6. **Laya does not separate the gold codes from the others.** Its AUC is 0.60 (multilingual) and 0.67 (English),
-   against 1.00 for Jev. Its micro precision stays between 0.05 and 0.10 at every `acceptAt`, below `most
-   frequent (I10)` (0.16), and its micro F1 (0.10, 0.12) is the level of that baseline. At 0.85, UNKNOWN takes
+   against 1.00 for Jev and 0.99 for Kev. Its micro precision stays between 0.05 and 0.10 at every `acceptAt`, below
+   `most frequent (I10)` (0.16), and its micro F1 (0.10, 0.12) is the level of that baseline. At 0.85, UNKNOWN takes
    1198 and 1435 wrong TRUEs out, but 1672 and 499 stay.
 7. **Jev shows no English advantage.** Its micro F1 on English documents is 0.76. The other languages go from 0.62
-   (de) to 0.81 (fr), and principal top-1 all from 69% (de) to 100% (es, mixed). Jev beats `keyword` in de, es,
-   fr and nl, ties it in en, and loses in it, pt and mixed. With 7 to 15 documents per language, each of these
-   differences is a few cells. Laya English ranks English documents best (AUC 0.87, against 0.61 to 0.71 for
-   the other languages), but its micro F1 there is 0.08. Laya multilingual shows no gap (AUC 0.54 to 0.66).
+   (de) to 0.81 (fr), and principal top-1 all from 69% (de) to 100% (es, mixed). Jev beats `keyword` in de, es, fr
+   and nl, ties it in en, and loses in it, pt and mixed. With 7 to 15 documents per language, each of these
+   differences is a few cells. Kev's micro F1 is highest on English (0.79) and lowest on nl (0.56) and it (0.58),
+   but its AUC is 0.98 or 0.99 in every language. Laya English ranks English documents best (AUC 0.87, against 0.61
+   to 0.71 for the other languages), but its micro F1 there is 0.08. Laya multilingual shows no gap (AUC 0.54 to
+   0.66).
 8. **Noise in the text does not lower Jev; lay words do a little.** On OCR, dictation and machine-translated
    documents, Jev's micro F1 is 0.72, 0.69 and 0.72, against 0.73 on clinician documents. Patient messages give
    0.64 (recall 0.47), where `keyword` reaches 0.73. Both Laya checkpoints are lowest there (0.05, 0.00). On
-   dictation, Laya multilingual decides 90% of the cells with 10% accuracy.
+   dictation, Laya multilingual decides 90% of the cells with 10% accuracy. Kev has 0.75 on OCR, 0.68 on
+   machine-translated and 0.69 on clinician documents, but 0.58 on dictation. On patient messages it has Jev's
+   micro F1 (0.64) at a lower coverage (79%).
 9. **For Laya English, a cut request ranks worse, but the window is not what limits Laya.** On its 62 cut documents
    the AUC is 0.63 and accuracy decided 61%. On the 38 that fit, 0.74 and 92%. The multilingual checkpoint
    cut no document and still has micro F1 0.10. The split is not random: the long documents are the cut ones.
-10. **Kev cannot run this bench under the memory guard.** It needs more than the 32 GiB MPS limit for one
-    52-question request. On its 4 documents it has precision 1.00 and AUC 0.98, and its principal is right on all
-    4 at 0.5 but UNKNOWN on all 4 from 0.85 up. That is too few documents for a finding.
+10. **Kev runs this bench only at a 64 GiB cap.** At the `kev.sh` default MPS limit of 32 GiB it fails on the
+    fifth document. At 64 GiB it held up to 58.8 GiB and took about 96 s per document. With that, a local 4B model
+    comes close to cloud Jev: AUC 0.99 against 1.00, micro F1 0.68 against 0.72 at 0.85, and 1 trap cell TRUE
+    against 0. Its p is lower than Jev's, so the same `acceptAt` leaves more UNKNOWN: coverage 90% against 96%,
+    and a principal decided on 10 documents against 91.
 
 ### What this does and does not establish
 
@@ -390,14 +415,14 @@ Between `acceptAt` 0.5 and 0.85, a cell with p > 0.5 either stays TRUE or become
   clipped to 4 tokens. The Laya principal scores measure a choice among bare codes.
 - **Axis confounds.** All 5 no-code documents are French, and the suspected documents are in 2 languages only
   (es, nl). The hard kinds have 3 to 5 documents each. The per-language tables mix these effects.
-- **macro F1** averages only the codes with at least one gold cell in the documents of the run. For Kev, that is
-  a few codes of 4 documents.
+- **macro F1** averages only the codes with at least one gold cell in the documents of the run.
 - **acceptAt 0.5.** `Policy` needs an `acceptAt` above 0.5, so `rank` uses the next double above 0.5. Every `feels`
   cell with p ≠ 0.5 is then decided, but the principal `choose` is still UNKNOWN when its top p is 0.5 or less.
-  That is why Laya's principal unknown is 66% to 82% at 0.5.
+  That is why Laya's principal unknown is 66% to 82% at 0.5, and Kev's 21%.
 - **The keyword baseline** uses synonyms that the operator wrote before the fixture documents. The writers never
   saw them: they got the codes and the titles only. The synonyms were not tuned after the runs.
 - **Memory incident.** During the first Laya run, the local judges filled the RAM of the Mac and it had to be
   reset. Since then, `scripts/kev.sh` and `scripts/laya.sh` run the server under a memory guard with a cap per
-  judge; see "Local judges" in [`AGENTS.md`](../AGENTS.md#local-judges). The Kev stop in these results is that
-  cap at work.
+  judge; see "Local judges" in [`AGENTS.md`](../AGENTS.md#local-judges). The first Kev run stopped at `icd-005`
+  at the default cap. The Kev records come from two runs: `icd-001` to `icd-004` at the 40 GiB cap and the rest
+  at 64 GiB, the ceiling in those rules. The caps limit memory only; the model and the requests are the same.
