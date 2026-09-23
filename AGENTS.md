@@ -38,6 +38,17 @@ scripts/laya.sh                                 # start a local Laya judge on :8
 mvn -q -pl demo exec:java -Dexec.args="..."     # run a demo (after mvn -q -DskipTests install); see demo/README.md, demo/kalah.md
 ```
 
+## Local judges
+
+A local judge filled the RAM of this 128 GiB Mac (no swap) on 2026-09-23 and the Mac had to be reset. Obey these rules:
+
+- Start a local judge only with `scripts/kev.sh` or `scripts/laya.sh`. They run the server under `scripts/memguard.py`, which kills the whole server process tree when the tree uses more than `MEMGUARD_MAX_GB` or the system has less than `MEMGUARD_MIN_FREE_GB` free (default 16 GiB).
+- Caps: Laya 16 GiB (measured peak 3 GiB), plus an MLX cache limit of 1 GiB. Kev 40 GiB, plus a PyTorch MPS limit of ~32 GiB (`PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.3`). To change a cap, set the env var before the script. Do not remove the guard.
+- Run one local judge server at a time. Do not run a judge server and an MLX or PyTorch script at the same time. The scripts refuse to start when `:8009` or `:8010` listens.
+- To stop a run, stop the server (Ctrl-C or SIGTERM to its script), not only the client. Then make sure that `ps` shows no server process.
+- If a server dies by SIGKILL or the guard kills it, do not restart it. Stop and report to the user.
+- For a local judge, give the client a timeout much longer than one request. On a timeout the client sends the request again, and the server still computes the first one.
+
 ## Architecture
 
 The pipeline is **Question → ask → Judge → validate → Evidence → Policy → Verdict/Rating**.
