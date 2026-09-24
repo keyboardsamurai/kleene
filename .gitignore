@@ -5,4 +5,11 @@ target/
 .idea/
 .junie/
 /.env
-/demo/out/
+# Demo outputs stay local, except the ICD run records that demo/icd.md is built from.
+/demo/out/*
+!/demo/out/icd/
+/demo/out/icd/*.log
+/demo/out/icd/*-rss.txt
+/demo/out/icd/kev-client-start.txt
+.DS_Store
+/.claude/
