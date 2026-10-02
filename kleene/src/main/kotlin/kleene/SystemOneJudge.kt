@@ -60,8 +60,8 @@ class SystemOneJudge(
     val baseUrl: String,
     val model: String,
     val apiKey: String? = null,
-    val timeout: Duration = 10.seconds,
-    val maxRetries: Int = 2,
+    val timeout: Duration = DEFAULT_TIMEOUT,
+    val maxRetries: Int = DEFAULT_MAX_RETRIES,
     val httpClient: HttpClient = HttpClient.newHttpClient(),
     override val id: String = "${URI(baseUrl).host}/$model",
 ) : Judge {
@@ -133,22 +133,38 @@ class SystemOneJudge(
     companion object {
         /**
          * A judge configured by `KLEENE_BASE_URL` (default `https://api.typesafe.ai`), `KLEENE_API_KEY` (optional)
-         * and `KLEENE_MODEL` (required).
+         * and `KLEENE_MODEL` (required). [timeout], [maxRetries] and [httpClient] are as for the constructor: give a
+         * local judge a [timeout] much longer than one request.
          *
          * @throws IllegalStateException if `KLEENE_MODEL` is not set.
          */
-        fun fromEnv(): SystemOneJudge = fromEnv(System::getenv)
+        fun fromEnv(
+            timeout: Duration = DEFAULT_TIMEOUT,
+            maxRetries: Int = DEFAULT_MAX_RETRIES,
+            httpClient: HttpClient = HttpClient.newHttpClient(),
+        ): SystemOneJudge = fromEnv(System::getenv, timeout, maxRetries, httpClient)
 
-        internal fun fromEnv(env: (String) -> String?): SystemOneJudge {
+        internal fun fromEnv(
+            env: (String) -> String?,
+            timeout: Duration = DEFAULT_TIMEOUT,
+            maxRetries: Int = DEFAULT_MAX_RETRIES,
+            httpClient: HttpClient = HttpClient.newHttpClient(),
+        ): SystemOneJudge {
             fun value(name: String) = env(name)?.takeIf { it.isNotBlank() }
             return SystemOneJudge(
                 baseUrl = value("KLEENE_BASE_URL") ?: "https://api.typesafe.ai",
                 model = checkNotNull(value("KLEENE_MODEL")) { "KLEENE_MODEL is not set: name the System One model to use" },
                 apiKey = value("KLEENE_API_KEY"),
+                timeout = timeout,
+                maxRetries = maxRetries,
+                httpClient = httpClient,
             )
         }
     }
 }
+
+private val DEFAULT_TIMEOUT = 10.seconds
+private const val DEFAULT_MAX_RETRIES = 2
 
 private fun refuseUnsupported(question: WireQuestion) {
     val (allowed, what) = when (question.kind) {

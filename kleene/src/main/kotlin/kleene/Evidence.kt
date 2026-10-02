@@ -14,8 +14,12 @@ enum class Kind { FEELS, CHOOSE, SCORE }
  * @property confidence the provider's own metric, not comparable across judges; always null for feels.
  * @property judge id of the [Judge] that produced this evidence.
  * @property model the model the judge resolved.
+ *
+ * Core builds it from each validated answer. To build it again from stored values, use [Evidence.feels] or
+ * [Evidence.choose]; the constructor is internal, so no caller passes a [Kind].
  */
-data class Evidence<T : Any>(
+@ConsistentCopyVisibility
+data class Evidence<T : Any> internal constructor(
     val kind: Kind,
     val options: List<T>,
     val probabilities: List<Double>,
@@ -29,6 +33,9 @@ data class Evidence<T : Any>(
         }
         require(kind != Kind.FEELS || options == listOf(true, false)) { "feels options must be [true, false], got $options" }
     }
+
+    /** Each option with its probability, in option order, exactly as received. */
+    val distribution: Map<T, Double> get() = options.zip(probabilities).toMap()
 
     /** The first option with the highest probability. */
     val top: T get() = options[topIndex]
@@ -85,6 +92,23 @@ data class Evidence<T : Any>(
             else -> Verdict.Accepted(top, this, policy)
         }
     }
+
+    companion object {
+        /** The feels Evidence of a stored p(true), as core builds it: p(false) is 1 - [pTrue]. */
+        fun feels(pTrue: Double, judge: String, model: String): Evidence<Boolean> {
+            require(pTrue in 0.0..1.0) { "pTrue must be in [0, 1], was $pTrue" }
+            return Evidence(Kind.FEELS, listOf(true, false), listOf(pTrue, 1 - pTrue), null, judge, model)
+        }
+
+        /** The choose Evidence of a stored [distribution], in its iteration order; probabilities are kept as given. */
+        fun <T : Any> choose(distribution: Map<T, Double>, judge: String, model: String, confidence: Double? = null): Evidence<T> {
+            require(distribution.values.all { it in 0.0..1.0 }) { "probabilities must be in [0, 1], got $distribution" }
+            return Evidence(Kind.CHOOSE, distribution.keys.toList(), distribution.values.toList(), confidence, judge, model)
+        }
+    }
 }
+
+/** p(true) of a feels Evidence, exactly as received. */
+val Evidence<Boolean>.pTrue: Double get() = probabilityOf(true)
 
 internal fun Double.show(): String = "%.4f".format(Locale.ROOT, this).trimEnd('0').trimEnd('.')

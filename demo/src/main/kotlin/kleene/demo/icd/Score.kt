@@ -1,11 +1,10 @@
 package kleene.demo.icd
 
 import kleene.Evidence
-import kleene.Kind
+import kleene.Labeled
 import kleene.Policy
+import kleene.Sweep
 import kleene.Truth
-import kleene.Verdict
-import kleene.demo.feelsEvidence
 import kleene.truth
 import java.util.Locale
 
@@ -57,7 +56,7 @@ fun metrics(scored: List<Pair<Record, Doc>>, codes: List<String>, policy: Policy
     val cells = scored.flatMap { (record, doc) ->
         codes.map { code ->
             val p = record.feels.getValue(code)
-            Cell(code, feelsEvidence(p, record.judge, record.model).decide(policy).truth, p, code in doc.categories)
+            Cell(code, Evidence.feels(p, record.judge, record.model).decide(policy).truth, p, code in doc.categories)
         }
     }
     val tp = cells.count { it.gold && it.truth == Truth.TRUE }
@@ -69,8 +68,8 @@ fun metrics(scored: List<Pair<Record, Doc>>, codes: List<String>, policy: Policy
     val perCode = cells.groupBy { it.code }.values.filter { code -> code.any { it.gold } }.map { code ->
         f1(code.count { it.gold && it.truth == Truth.TRUE }, code.count { !it.gold && it.truth == Truth.TRUE }, code.count { it.gold })
     }
-    val principals = scored.map { (record, doc) -> principalEvidence(record).decide(policy) to (doc.principal ?: NONE) }
-    val accepted = principals.mapNotNull { (verdict, gold) -> (verdict as? Verdict.Accepted)?.let { it.value == gold } }
+    val principal = Sweep(scored.map { (record, doc) -> Labeled(principalEvidence(record), setOf(doc.principal ?: NONE)) }).at(policy)
+    val right = principal.accepted - principal.wrong
     return Metrics(
         n = scored.size,
         tp = tp, fp = fp, fn = fn, tn = tn, unknown = unknown,
@@ -81,9 +80,9 @@ fun metrics(scored: List<Pair<Record, Doc>>, codes: List<String>, policy: Policy
         coverage = ratio(cells.size - unknown, cells.size),
         accuracy = ratio(tp + tn, cells.size - unknown),
         auc = auc(cells),
-        top1Decided = ratio(accepted.count { it }, accepted.size),
-        unknownRate = ratio(principals.size - accepted.size, principals.size),
-        top1All = ratio(accepted.count { it }, principals.size),
+        top1Decided = ratio(right, principal.accepted),
+        unknownRate = ratio(principal.unknown, principal.n),
+        top1All = ratio(right, principal.n),
         cut = scored.count { (record, _) -> !record.fits },
     )
 }
@@ -103,7 +102,7 @@ private fun auc(cells: List<Cell>): Double {
 }
 
 private fun principalEvidence(record: Record) =
-    Evidence(Kind.CHOOSE, record.principal.keys.toList(), record.principal.values.toList(), record.confidence, record.judge, record.model)
+    Evidence.choose(record.principal, record.judge, record.model, record.confidence)
 
 /**
  * The three baselines, one record per document of [docs], each playing no judge: `always empty` (every code FALSE,

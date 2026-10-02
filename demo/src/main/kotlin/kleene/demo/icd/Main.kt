@@ -51,8 +51,7 @@ private fun runLog(args: List<String>): Int {
     (cut - docs.map { it.id }.toSet()).firstOrNull()?.let { throw UsageError("--cut lists $it, which is not in the fixture") }
 
     // A per-attempt timeout longer than the library default: 52 questions per document are slow on a local judge.
-    val env = SystemOneJudge.fromEnv()
-    val ai = Kleene(SystemOneJudge(env.baseUrl, env.model, env.apiKey, timeout.seconds))
+    val ai = Kleene(SystemOneJudge.fromEnv(timeout = timeout.seconds))
     out.absoluteFile.parentFile.mkdirs()
     runBlocking { log(ai, labels().codes, docs, out, fixtureVersion(), cut) }
     return 0

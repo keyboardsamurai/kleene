@@ -7,7 +7,6 @@ import kleene.demo.splitArgs
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 fun main(args: Array<String>) {
@@ -54,7 +53,8 @@ private fun runLog(args: List<String>): Int {
     val seed = options["--seed"]?.let { it.toIntOrNull() ?: throw UsageError("--seed must be a number") } ?: 1
     val timeout = options["--timeout"]?.let { it.toIntOrNull() ?: throw UsageError("--timeout must be a number") } ?: 60
 
-    val ai = Kleene(judgeFromEnv(timeout.seconds))
+    // A per-attempt timeout longer than the library default: 14 questions per position are slow on a local judge.
+    val ai = Kleene(SystemOneJudge.fromEnv(timeout = timeout.seconds))
     println("computing $count positions for seed $seed")
     val positions = positions(seed, count)
     out.absoluteFile.parentFile.mkdirs()
@@ -92,13 +92,4 @@ private fun runsOf(files: List<String>): Map<String, List<Record>> {
 /** Parses a comma list such as `0.95,0.85`; each must be a valid [kleene.Policy.acceptAt], in (0.5, 1]. */
 private fun acceptAts(list: String): List<Double> = list.split(",").map { item ->
     item.trim().toDoubleOrNull()?.takeIf { it > 0.5 && it <= 1.0 } ?: throw UsageError("--accept-at needs numbers in (0.5, 1], got $item")
-}
-
-/**
- * The judge named by `KLEENE_BASE_URL`, `KLEENE_MODEL` and `KLEENE_API_KEY`, with a per-attempt [timeout] longer
- * than the library default: 14 questions per position are slow on a local judge.
- */
-private fun judgeFromEnv(timeout: Duration): SystemOneJudge {
-    val env = SystemOneJudge.fromEnv()
-    return SystemOneJudge(env.baseUrl, env.model, env.apiKey, timeout)
 }

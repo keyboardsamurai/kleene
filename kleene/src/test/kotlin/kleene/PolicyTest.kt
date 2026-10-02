@@ -3,6 +3,8 @@ package kleene
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class PolicyTest {
 
@@ -44,5 +46,23 @@ class PolicyTest {
         assertFailsWith<IllegalArgumentException> { Policy(minConfidence = -0.1) }
         assertFailsWith<IllegalArgumentException> { Policy(minConfidence = 1.5) }
         assertFailsWith<IllegalArgumentException> { Policy(minConfidence = Double.NaN) }
+    }
+
+    @Test
+    fun `equal thresholds make equal policies`() {
+        assertEquals(Policy(0.9), Policy(acceptAt = 0.9, trueAt = 0.9, falseAt = 0.1))
+        assertEquals(Policy(0.9).hashCode(), Policy(acceptAt = 0.9, trueAt = 0.9, falseAt = 0.1).hashCode())
+        assertNotEquals(Policy(0.9), Policy(0.9, minConfidence = 0.5))
+        assertNotEquals(Policy(0.9), Policy(0.9, trueAt = 0.95))
+    }
+
+    @Test
+    fun `toString names every threshold`() {
+        assertEquals("Policy(acceptAt=0.9, trueAt=0.9, falseAt=0.1, minConfidence=null)", Policy(0.9).toString())
+    }
+
+    @Test
+    fun `has no copy, because copy would keep the thresholds derived from the old acceptAt`() {
+        assertTrue(Policy::class.java.methods.none { it.name.startsWith("copy") })
     }
 }

@@ -122,4 +122,46 @@ class EvidenceTest {
         assertEquals(1.0, chooseEvidence("a" to 0.25, "b" to 0.25, "c" to 0.25, "d" to 0.25).normalizedEntropy, 1e-12)
         assertEquals(-(0.8 * ln(0.8) + 0.2 * ln(0.2)) / ln(2.0), feelsEvidence(0.8).normalizedEntropy, 1e-12)
     }
+
+    @Test
+    fun `feels evidence of a stored p(true) holds p and 1 - p and no confidence`() {
+        val evidence = Evidence.feels(0.8, "kev", "m")
+
+        assertEquals(Kind.FEELS, evidence.kind)
+        assertEquals(listOf(true, false), evidence.options)
+        assertEquals(listOf(0.8, 1 - 0.8), evidence.probabilities)
+        assertEquals(null, evidence.confidence)
+        assertEquals("kev", evidence.judge)
+        assertEquals(0.8, evidence.pTrue)
+    }
+
+    @Test
+    fun `feels evidence rejects a p(true) outside 0 to 1`() {
+        assertFailsWith<IllegalArgumentException> { Evidence.feels(1.1, "kev", "m") }
+        assertFailsWith<IllegalArgumentException> { Evidence.feels(Double.NaN, "kev", "m") }
+    }
+
+    @Test
+    fun `choose evidence keeps the iteration order of the distribution`() {
+        val evidence = Evidence.choose(linkedMapOf("b" to 0.3, "a" to 0.7), "kev", "m", confidence = 0.6)
+
+        assertEquals(Kind.CHOOSE, evidence.kind)
+        assertEquals(listOf("b", "a"), evidence.options)
+        assertEquals(listOf(0.3, 0.7), evidence.probabilities)
+        assertEquals(0.6, evidence.confidence)
+    }
+
+    @Test
+    fun `choose evidence rejects a probability outside 0 to 1`() {
+        assertFailsWith<IllegalArgumentException> { Evidence.choose(mapOf("a" to 1.2, "b" to -0.2), "kev", "m") }
+    }
+
+    @Test
+    fun `distribution is each option with its probability as received, in option order`() {
+        val distribution = mapOf("a" to 0.25, "b" to 0.76)
+
+        assertEquals(distribution, Evidence.choose(distribution, "kev", "m").distribution)
+        assertEquals(listOf("a", "b"), Evidence.choose(distribution, "kev", "m").distribution.keys.toList())
+        assertEquals(mapOf(true to 0.9, false to 1 - 0.9), Evidence.feels(0.9, "kev", "m").distribution)
+    }
 }

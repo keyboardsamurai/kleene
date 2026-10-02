@@ -8,7 +8,6 @@ import kleene.demo.splitArgs
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 fun main(args: Array<String>) {
@@ -52,7 +51,8 @@ private fun runLog(args: List<String>): Int {
     val chunk = options["--chunk"]?.let { it.toIntOrNull() ?: throw UsageError("--chunk must be a number") } ?: 0
     val timeout = options["--timeout"]?.let { it.toIntOrNull() ?: throw UsageError("--timeout must be a number") } ?: 120
 
-    val ai = Kleene(judgeFromEnv(timeout.seconds))
+    // A per-attempt timeout longer than the library default: one terms-of-service version is large and a local judge is slow.
+    val ai = Kleene(SystemOneJudge.fromEnv(timeout = timeout.seconds))
     val versions = history(File(repoDir), path)
     runBlocking { log(ai, versions, path, out, chunk) }
     return 0
@@ -74,13 +74,4 @@ private fun runHtml(args: List<String>): Int {
 
     out.writeText(html(readRecords(files.map(::File)), options["--repo-url"]))
     return 0
-}
-
-/**
- * The judge named by `KLEENE_BASE_URL`, `KLEENE_MODEL` and `KLEENE_API_KEY`, with a per-attempt [timeout] longer
- * than the library default: one terms-of-service version is a large [kleene.State] and a local judge is slow.
- */
-private fun judgeFromEnv(timeout: Duration): SystemOneJudge {
-    val env = SystemOneJudge.fromEnv()
-    return SystemOneJudge(env.baseUrl, env.model, env.apiKey, timeout)
 }

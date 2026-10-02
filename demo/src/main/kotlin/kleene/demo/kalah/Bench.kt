@@ -1,16 +1,15 @@
 package kleene.demo.kalah
 
 import kleene.Evidence
-import kleene.Kind
 import kleene.Kleene
+import kleene.Labeled
 import kleene.Policy
-import kleene.Question
 import kleene.State
-import kleene.Verdict
+import kleene.Sweep
 import kleene.ask
 import kleene.choose
-import kleene.demo.feelsEvidence
 import kleene.feels
+import kleene.pTrue
 import kleene.score
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -138,13 +137,12 @@ data class Record(
 private class Questions(ai: Kleene) {
     val move = ai.choose(
         "Which pit should you sow to end the game with the most seeds?",
-        *(0..5).map { "pit ${it + 1}" to it }.toTypedArray(),
+        0..5,
         name = "move",
-    )
+    ) { "pit ${it + 1}" }
     val again = (1..6).map { ai.feels("Sowing pit $it gives you another turn", name = "again$it") }
     val takes = (1..6).map { ai.feels("Sowing pit $it captures seeds", name = "takes$it") }
-    val lead = ai.score("How far ahead are you with best play?", *LEAD_LEVELS.toTypedArray(), name = "lead")
-    val all: Array<Question<*>> = arrayOf(move, *again.toTypedArray(), *takes.toTypedArray(), lead)
+    val lead = ai.score("How far ahead are you with best play?", LEAD_LEVELS, name = "lead")
 }
 
 /**
@@ -178,7 +176,7 @@ suspend fun log(ai: Kleene, positions: List<IntArray>, out: File, hints: Boolean
 }
 
 private suspend fun recordFor(ai: Kleene, questions: Questions, id: Int, board: IntArray, hints: Boolean): Record {
-    val answers = ai.ask(state(board, hints), *questions.all)
+    val answers = ai.ask(state(board, hints), listOf(questions.move) + questions.again + questions.takes + questions.lead)
     val lead = answers[questions.lead]
     return Record(
         position = id,
@@ -186,8 +184,8 @@ private suspend fun recordFor(ai: Kleene, questions: Questions, id: Int, board: 
         judge = answers.judge,
         model = answers.model,
         move = answers[questions.move].evidence.probabilities,
-        again = questions.again.map { answers[it].evidence.probabilityOf(true) },
-        takes = questions.takes.map { answers[it].evidence.probabilityOf(true) },
+        again = questions.again.map { answers[it].evidence.pTrue },
+        takes = questions.takes.map { answers[it].evidence.pTrue },
         lead = lead.probabilities,
         leadExpected = lead.expected,
         hints = hints,
@@ -286,21 +284,25 @@ private class Tally(val decided: Int, val wrong: Int, val illegal: Int = 0) {
 
 /** Every move reapplied at [policy], with no masking: an accepted empty pit is wrong and illegal. */
 private fun moveTally(run: Run, policy: Policy): Tally {
-    val accepted = run.mapNotNull { (record, facts) ->
-        val evidence = Evidence(Kind.CHOOSE, (0..5).toList(), record.move, null, record.judge, record.model)
-        (evidence.decide(policy) as? Verdict.Accepted)?.let { facts to it.value }
-    }
-    return Tally(accepted.size, accepted.count { (facts, pit) -> pit !in facts.best }, accepted.count { (facts, pit) -> pit !in facts.legal })
+    fun rowOf(gold: (Facts) -> List<Int>) = Sweep(
+        run.map { (record, facts) ->
+            require(record.move.size == 6) { "a move record needs 6 probabilities, not ${record.move.size}" }
+            Labeled(Evidence.choose((0..5).zip(record.move).toMap(), record.judge, record.model), gold(facts).toSet())
+        },
+    ).at(policy)
+    val best = rowOf { it.best }
+    return Tally(best.accepted, best.wrong, rowOf { it.legal }.wrong)
 }
 
 /** Every `againN` and `takesN` reapplied at [policy] against the engine's answer, false on an empty pit. */
 private fun feelsTally(run: Run, policy: Policy): Tally {
-    val accepted = run.flatMap { (record, facts) ->
-        ((record.again zip facts.again) + (record.takes zip facts.takes)).mapNotNull { (p, engine) ->
-            (feelsEvidence(p, record.judge, record.model).decide(policy) as? Verdict.Accepted)?.let { it.value to engine }
+    val cells = run.flatMap { (record, facts) ->
+        ((record.again zip facts.again) + (record.takes zip facts.takes)).map { (p, engine) ->
+            Labeled(Evidence.feels(p, record.judge, record.model), setOf(engine))
         }
     }
-    return Tally(accepted.size, accepted.count { (said, engine) -> said != engine })
+    val row = Sweep(cells).at(policy)
+    return Tally(row.accepted, row.wrong)
 }
 
 private const val NONE = "–"
