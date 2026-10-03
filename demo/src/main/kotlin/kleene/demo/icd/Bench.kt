@@ -4,6 +4,7 @@ import kleene.Kleene
 import kleene.Question
 import kleene.Verdict
 import kleene.ask
+import kleene.pTrue
 import kleene.choose
 import kleene.feels
 import kotlinx.serialization.Serializable
@@ -45,10 +46,9 @@ class Questions(ai: Kleene, categories: List<Category>) {
     }
     val principal = ai.choose(
         "Which is the principal diagnosis of this patient in the document?",
-        *(categories.map { "${it.code} ${it.title}" to it.code } + ("none of these" to NONE)).toTypedArray(),
+        categories.map { "${it.code} ${it.title}" to it.code } + ("none of these" to NONE),
         name = "principal",
     )
-    val all: Array<Question<*>> = (feels.values + principal).toTypedArray()
 }
 
 /**
@@ -83,14 +83,14 @@ suspend fun log(ai: Kleene, categories: List<Category>, docs: List<Doc>, out: Fi
 }
 
 private suspend fun recordFor(ai: Kleene, questions: Questions, doc: Doc, version: String, fits: Boolean): Record {
-    val answers = ai.ask(state(doc), *questions.all)
+    val answers = ai.ask(state(doc), questions.feels.values + questions.principal)
     val principal = answers[questions.principal].evidence
     return Record(
         id = doc.id,
         judge = answers.judge,
         model = answers.model,
-        feels = questions.feels.mapValues { (_, question) -> answers[question].evidence.probabilityOf(true) },
-        principal = principal.options.zip(principal.probabilities).toMap(),
+        feels = questions.feels.mapValues { (_, question) -> answers[question].evidence.pTrue },
+        principal = principal.distribution,
         confidence = principal.confidence,
         version = version,
         fits = fits,

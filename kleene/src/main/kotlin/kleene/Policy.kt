@@ -9,8 +9,11 @@ import java.math.BigDecimal
  * @property trueAt feels: p(true) at or above this is TRUE.
  * @property falseAt feels: p(true) at or below this is FALSE.
  * @property minConfidence choose only: minimum provider-reported confidence. Not portable across judges.
+ *
+ * Not a data class: [trueAt] and [falseAt] default from [acceptAt] at construction, so a `copy(acceptAt = ...)`
+ * would keep the old band. Build a new Policy instead.
  */
-data class Policy(
+class Policy(
     val acceptAt: Double = 0.85,
     val trueAt: Double = acceptAt,
     val falseAt: Double = mirror(acceptAt),
@@ -22,6 +25,15 @@ data class Policy(
         require(falseAt >= 0.0 && falseAt < 0.5) { "falseAt must be in [0, 0.5), was $falseAt" }
         require(minConfidence == null || minConfidence in 0.0..1.0) { "minConfidence must be in [0, 1], was $minConfidence" }
     }
+
+    override fun equals(other: Any?): Boolean = other is Policy && thresholds == other.thresholds
+
+    override fun hashCode(): Int = thresholds.hashCode()
+
+    /** Boxed, so equals and hashCode agree as in a data class (-0.0 differs from 0.0). */
+    private val thresholds: List<Double?> get() = listOf(acceptAt, trueAt, falseAt, minConfidence)
+
+    override fun toString(): String = "Policy(acceptAt=$acceptAt, trueAt=$trueAt, falseAt=$falseAt, minConfidence=$minConfidence)"
 }
 
 /** `1 - acceptAt` in decimal, so 0.9 mirrors to exactly 0.1 and not to 0.09999999999999998. */

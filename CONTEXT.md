@@ -23,7 +23,7 @@ The explicit input a judgment is made about. Text or structured data, supplied b
 _Avoid_: input, context, prompt
 
 **Question**:
-A reusable, typed judgment definition (a feels, choose, or score) that can be asked of any State. Its name comes from the Kotlin property it is bound to.
+A reusable, typed judgment definition (a feels, choose, or score) that can be asked of any State. Its name comes from the Kotlin property it is bound to, or from an explicit name. A definition with neither is unnamed and cannot be asked.
 _Avoid_: Semantic, semantic function, judgment (as a type), prompt
 
 **ask**:
@@ -80,13 +80,29 @@ _Avoid_: unsure, uncertain, abstain, null
 Apply a different Policy to existing Evidence. Zero model calls.
 _Avoid_: re-decide, recompute, replay
 
+**record**:
+Append each Request a Judge answers, with its Response and the Judge id, to a recording (`Judge.recordingTo`).
+_Avoid_: log, capture, cache
+
 **replay**:
-Return previously recorded Evidence instead of calling a Judge. Strict: a missing or mismatched recording fails, never falls through to a live call.
+Return the recorded Response for an equal Request instead of calling a model (`ReplayJudge`); core validates it, so the Evidence equals the recorded Evidence. Strict: a missing or mismatched recording fails, never falls through to a live call.
 _Avoid_: cache, reapply, mock
 
 **reevaluate**:
 Ask a Judge again for fresh Evidence. Costs a model call.
 _Avoid_: retry, replay, re-run
+
+**Sweep**:
+A table of coverage and risk at each of several Policies, from the Evidence of one Judge and model and its Gold labels. Zero model calls. It never picks or installs a Policy; the caller does.
+_Avoid_: tuning, calibration, threshold search
+
+**Labeled**:
+One item of a Sweep: stored Evidence and the Gold labels (a non-empty set of values) that count as right for it.
+_Avoid_: case, sample, example
+
+**Row** (of a Sweep):
+The counts of a Sweep at one Policy: n, accepted, wrong, unknown, coverage (accepted / n) and risk (wrong / accepted, NaN when nothing is accepted).
+_Avoid_: result, entry, line
 
 ### Benchmarks (demos)
 
@@ -105,7 +121,7 @@ _Avoid_: ground truth, expected answers, annotations
 ### Checking (later)
 
 **Contract**:
-A named, reusable set of Requirements and Rules an output must satisfy.
+A named, reusable set of Requirements and Rules an output must satisfy. It has at least one Requirement or Rule.
 _Avoid_: rubric, spec, assertion set
 
 **Requirement**:
@@ -121,5 +137,9 @@ Evaluate an existing output against a Contract, producing a Report. Never modifi
 _Avoid_: validate, assert, satisfy
 
 **Report**:
-The per-requirement outcome of a check: each requirement PASS, FAIL, or UNKNOWN, with its Evidence. Never a single aggregate score.
+The per-requirement outcome of a check: one Finding per Rule and per Requirement, in Contract order. Never a single aggregate score.
 _Avoid_: CheckReport, result, score
+
+**Finding**:
+What a Report holds for one Rule (passed or not: PASS or FAIL) or one Requirement (its Verdict, with Evidence: PASS, FAIL, or UNKNOWN).
+_Avoid_: result, item, entry

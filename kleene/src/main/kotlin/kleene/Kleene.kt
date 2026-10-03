@@ -22,15 +22,15 @@ internal fun State.toJson(): JsonElement = when (this) {
 }
 
 /**
- * Asks every question about one [state] in exactly one [Judge.evaluate] call. Asking is eager: the returned
+ * Asks every question about one [state] in exactly one [Judge.evaluate] call. The `vararg`, `String` and
+ * `JsonElement` overloads all delegate here. Asking is eager: the returned
  * [Answers] are validated and decided, and reading them never calls a model.
  *
  * @throws KleeneException.InvalidRequest for no questions, a question from another [Kleene], or two questions
  *   with the same wire id; checked before the judge is called.
- * @throws IllegalStateException if a question has no name.
  * @throws KleeneException.Malformed if any answer is malformed: the whole ask fails.
  */
-suspend fun Kleene.ask(state: State, vararg questions: Question<*>): Answers {
+suspend fun Kleene.ask(state: State, questions: Collection<Question<*>>): Answers {
     val request = Request(state, wireQuestions(questions))
     val response = judge.evaluate(request)
     validateResponse(request, response)
@@ -38,11 +38,17 @@ suspend fun Kleene.ask(state: State, vararg questions: Question<*>): Answers {
     return Answers(outcomes, response.model, judge.id, response.usage, response.requestId)
 }
 
-suspend fun Kleene.ask(text: String, vararg questions: Question<*>): Answers = ask(State.Text(text), *questions)
+suspend fun Kleene.ask(text: String, questions: Collection<Question<*>>): Answers = ask(State.Text(text), questions)
 
-suspend fun Kleene.ask(json: JsonElement, vararg questions: Question<*>): Answers = ask(State.Json(json), *questions)
+suspend fun Kleene.ask(json: JsonElement, questions: Collection<Question<*>>): Answers = ask(State.Json(json), questions)
 
-private fun Kleene.wireQuestions(questions: Array<out Question<*>>): List<WireQuestion> {
+suspend fun Kleene.ask(state: State, vararg questions: Question<*>): Answers = ask(state, questions.asList())
+
+suspend fun Kleene.ask(text: String, vararg questions: Question<*>): Answers = ask(State.Text(text), questions.asList())
+
+suspend fun Kleene.ask(json: JsonElement, vararg questions: Question<*>): Answers = ask(State.Json(json), questions.asList())
+
+private fun Kleene.wireQuestions(questions: Collection<Question<*>>): List<WireQuestion> {
     if (questions.isEmpty()) throw KleeneException.InvalidRequest("ask needs at least one question")
     val wire = questions.map { it.toWire() }
     questions.firstOrNull { it.kleene !== this }?.let {

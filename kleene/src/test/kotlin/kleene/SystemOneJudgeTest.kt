@@ -12,6 +12,7 @@ import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.net.http.HttpClient
 import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -23,8 +24,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 class SystemOneJudgeTest {
@@ -153,8 +156,8 @@ class SystemOneJudgeTest {
     @Test
     fun `a captured Kev 10-level score answer with 2-dp drift passes validation as received`() = runBlocking {
         StubServer(Reply(200, resource("response-kev-captured-10-levels.json"))).use { stub ->
-            val levels = (1..10).map { "$it" }.toTypedArray()
-            val effort = Kleene(judge(stub)).score("How much effort will this ticket take?", *levels, name = "effort")
+            val levels = (1..10).map { "$it" }
+            val effort = Kleene(judge(stub)).score("How much effort will this ticket take?", levels, name = "effort")
 
             val rating = effort("Rename one config key and update its two call sites.")
 
@@ -389,6 +392,26 @@ class SystemOneJudgeTest {
         assertEquals("https://api.typesafe.ai", judge.baseUrl)
         assertNull(judge.apiKey)
         assertEquals("api.typesafe.ai/jev-1.13.0", judge.id)
+    }
+
+    @Test
+    fun `fromEnv takes the timeout, retries and HTTP client from the caller`() {
+        val client = HttpClient.newHttpClient()
+
+        val judge = SystemOneJudge.fromEnv(mapOf("KLEENE_MODEL" to "kev-latest")::get, 5.minutes, 0, client)
+
+        assertEquals(5.minutes, judge.timeout)
+        assertEquals(0, judge.maxRetries)
+        assertSame(client, judge.httpClient)
+    }
+
+    @Test
+    fun `fromEnv without overrides has the constructor defaults`() {
+        val fromEnv = SystemOneJudge.fromEnv(mapOf("KLEENE_MODEL" to "kev-latest")::get)
+        val built = SystemOneJudge("https://api.typesafe.ai", "kev-latest")
+
+        assertEquals(built.timeout, fromEnv.timeout)
+        assertEquals(built.maxRetries, fromEnv.maxRetries)
     }
 
     @Test

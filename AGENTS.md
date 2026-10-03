@@ -53,7 +53,7 @@ A local judge filled the RAM of this 128 GiB Mac (no swap) on 2026-09-23 and the
 
 The pipeline is **Question → ask → Judge → validate → Evidence → Policy → Verdict/Rating**.
 
-- `Kleene(judge, policy)` is the only runtime and holds no global state. `feels`/`choose`/`score` build `Question`s bound to that `Kleene`. A Question takes its `name` from the delegated property (`val urgent by ai.feels(...)`). The wire id is `name.sha256(kind, instructions, labels)[:16]`, so renaming an option label creates a new question.
+- `Kleene(judge, policy)` is the only runtime and holds no global state. `feels`/`choose`/`score` build `Question`s bound to that `Kleene`. A Question takes its `name` from the delegated property (`val urgent by ai.feels(...)`) or from an explicit `name`; without either the definition is a `Question.Unnamed`, which cannot be asked. The wire id is `name.sha256(kind, instructions, labels)[:16]`, so renaming an option label creates a new question.
 - **One `ask` makes exactly one `Judge.evaluate` call.** Reading `Answers`, `Verdict`, `Evidence`, or `Rating` never calls a model. `Verdict.at(policy)` reapplies a Policy with zero model calls.
 - `Judge` is a `fun interface` SPI: `Request(state, wireQuestions) → Response(raw distributions)`. Core validates every Response after any Judge and before building `Answers`. Validation checks ids, kinds, finiteness, [0,1], label sets, the sum tolerance `0.006×K`, and for score the expected-level tolerance `0.006×(1+K(K−1)/2)` (ADR-0003). Any violation throws `Malformed`, and core never repairs a response.
 - `Evidence` stores probabilities exactly as received (never renormalized). `Evidence.decide(policy)` is the only place thresholds apply. `Rating` (score) has no policy; the caller's comparison acts as the policy.
@@ -68,6 +68,8 @@ The pipeline is **Question → ask → Judge → validate → Evidence → Polic
 - Choosing with `minConfidence` set when the response has no confidence throws `Malformed` (fail closed); it does not return Unknown.
 - `confidence` comes from each provider and can't be compared across judges; `Evidence.judge` records which judge produced it. `acceptAt` and `margin` are the portable gates.
 - K3 `and`/`or`/`not` work on decided `Truth` values only. There is no probability arithmetic across questions.
+- Replay is strict (ADR-0008). `ReplayJudge` never calls a model; a Request with no recording throws `IllegalStateException`, never a fall-through to a live Judge.
+- `Sweep` prints a table only. It never picks or installs a Policy, and it has no default grid (ADR-0007).
 - Spec §4 lists the minimum required tests. Each feature needs its listed tests before it counts as done.
 
 

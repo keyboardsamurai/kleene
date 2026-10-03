@@ -46,6 +46,22 @@ class AskTest {
     }
 
     @Test
+    fun `asking a collection of questions makes exactly one request`() = runTest {
+        val questions: Collection<Question<*>> = listOf(urgent, route) + clarity
+
+        val answers = ai.ask("I was charged twice", questions)
+
+        assertEquals(listOf("urgent", "route", "clarity"), judge.requests.single().questions.map { it.name })
+        assertIs<Verdict.Accepted<Team>>(answers[route])
+    }
+
+    @Test
+    fun `asking an empty collection is an invalid request`() = runTest {
+        assertFailsWith<KleeneException.InvalidRequest> { ai.ask(State.Text("The server is down"), emptyList()) }
+        assertTrue(judge.requests.isEmpty())
+    }
+
+    @Test
     fun `reading answers for a question that was not asked throws`() = runTest {
         val answers = ai.ask("I was charged twice", urgent)
 
@@ -80,7 +96,7 @@ class AskTest {
     fun `feels evidence carries p and 1 - p, no confidence, the judge id and the model`() = runTest {
         val evidence = urgent("The server is down").evidence
 
-        assertEquals(Evidence(Kind.FEELS, listOf(true, false), listOf(0.9, 1 - 0.9), null, "scripted", "scripted"), evidence)
+        assertEquals(Evidence.feels(0.9, "scripted", "scripted"), evidence)
     }
 
     @Test

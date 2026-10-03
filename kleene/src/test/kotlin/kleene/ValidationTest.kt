@@ -14,10 +14,10 @@ class ValidationTest {
     private val urgent by ai.feels("Needs a response today")
     private val route by ai.choose("Which team should handle this?", "billing" to 1, "technical" to 2, "other" to 3)
     private val clarity by ai.score("How clearly is the problem described?", "Unclear", "Partly clear", "Clear")
-    private val tenWay by ai.choose("Which of ten?", *(0 until 10).map { "o$it" to it }.toTypedArray())
+    private val tenWay by ai.choose("Which of ten?", (0 until 10).map { "o$it" to it })
     private val severity by ai.score("How severe is the problem?", "None", "Low", "Medium", "High")
-    private val satisfaction by ai.score("How satisfied is the customer?", *(1..5).map { "s$it" }.toTypedArray())
-    private val tenLevel by ai.score("Which of ten levels?", *(0 until 10).map { "l$it" }.toTypedArray())
+    private val satisfaction by ai.score("How satisfied is the customer?", (1..5).map { "s$it" })
+    private val tenLevel by ai.score("Which of ten levels?", (0 until 10).map { "l$it" })
 
     private val goodUrgent = "urgent" to Raw.Noul(0.9)
     private val goodRoute = "route" to choice(0.9, 0.08, 0.02)

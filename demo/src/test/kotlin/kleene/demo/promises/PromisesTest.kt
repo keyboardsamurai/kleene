@@ -26,7 +26,7 @@ class PromisesTest {
     private fun candidateOf(request: Request): String =
         (request.state as State.Json).value.jsonObject.getValue("candidate").jsonPrimitive.content
 
-    /** Answers requirement 1 by the marker ("v1"/"v2"/"v3") found in the candidate text; the rest fixed at 0.9. */
+    /** Answers the first requirement (found by its text) by the marker ("v1"/"v2"/"v3") found in the candidate text; the rest fixed at 0.9. */
     private fun markerJudge(requests: MutableList<Request>): Judge = Judge { request ->
         requests += request
         val candidate = candidateOf(request)
@@ -35,7 +35,7 @@ class PromisesTest {
             "v2" in candidate -> 0.41
             else -> 0.10
         }
-        Response(model = "t", answers = request.questions.associate { q -> q.id to Raw.Noul(if (q.name == "userPromises.1") p1 else 0.9) })
+        Response(model = "t", answers = request.questions.associate { q -> q.id to Raw.Noul(if (q.instructions == userPromises.requirements.first()) p1 else 0.9) })
     }
 
     // 1. chunk
@@ -93,7 +93,7 @@ class PromisesTest {
         assertEquals(3, out.readLines().size)
         assertEquals(3, requests.size)
         requests.forEach { request ->
-            assertEquals(listOf("userPromises.1", "userPromises.2", "userPromises.3", "userPromises.4"), request.questions.map { it.name })
+            assertEquals(userPromises.requirements, request.questions.map { it.instructions })
             assertTrue(request.questions.all { it.kind == Kind.FEELS })
         }
 

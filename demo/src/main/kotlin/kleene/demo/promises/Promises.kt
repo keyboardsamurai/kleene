@@ -1,11 +1,12 @@
 package kleene.demo.promises
 
+import kleene.Evidence
 import kleene.Kleene
 import kleene.Policy
 import kleene.Truth
 import kleene.check
 import kleene.contract
-import kleene.demo.feelsEvidence
+import kleene.pTrue
 import kleene.truth
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -90,8 +91,8 @@ suspend fun log(ai: Kleene, versions: List<Version>, path: String, out: File, ma
 private suspend fun recordFor(ai: Kleene, version: Version, path: String, maxChars: Int): Record {
     val ruleResults = userPromises.rules.map { rule -> RuleResult(rule.label, if (rule.test(version.text)) "PASS" else "FAIL") }
     val reports = chunk(version.text, maxChars).map { piece -> ai.check(piece, userPromises) }
-    val requirements = userPromises.requirements.map { label ->
-        Requirement(label, reports.map { report -> report.results.first { it.label == label }.evidence!!.probabilityOf(true) })
+    val requirements = userPromises.requirements.mapIndexed { i, label ->
+        Requirement(label, reports.map { report -> report.requirements[i].verdict.evidence.pTrue })
     }
     return Record(path, version.commit, version.date.toString(), reports.first().judge, reports.first().model, requirements, ruleResults)
 }
@@ -102,7 +103,7 @@ private suspend fun recordFor(ai: Kleene, version: Version, path: String, maxCha
  */
 fun decide(pTrue: List<Double>, policy: Policy, judge: String, model: String): Truth =
     pTrue
-        .map { p -> feelsEvidence(p, judge, model).decide(policy).truth }
+        .map { p -> Evidence.feels(p, judge, model).decide(policy).truth }
         .reduce(Truth::or)
 
 /** Reads every [Record] from [files], one JSONL line each. */

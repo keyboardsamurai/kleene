@@ -3,8 +3,10 @@ package kleene
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -13,8 +15,8 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -22,19 +24,22 @@ class CheckTest {
 
     private val output = "Upload failed. No files were saved. Please try again."
 
-    private val judge = ScriptedJudge {
-        feels("uploadError.1", 0.97)
-        feels("uploadError.2", 0.62)
-        feels("uploadError.3", 0.05)
-    }
-    private val ai = Kleene(judge)
-
     private val uploadError by contract {
         +"Says the upload failed"
         +"Makes clear that no files were saved"
         +"Tells the user to retry"
         rule("Fits the error banner") { it.length <= 180 }
     }
+
+    private val judge = ScriptedJudge {
+        requirements(
+            uploadError,
+            "Says the upload failed" to 0.97,
+            "Makes clear that no files were saved" to 0.62,
+            "Tells the user to retry" to 0.05,
+        )
+    }
+    private val ai = Kleene(judge)
 
     @Test
     fun `every rule runs in order even when the first fails`() = runTest {
@@ -48,8 +53,10 @@ class CheckTest {
         val report = ai.check(output, rulesOnly)
 
         assertEquals(listOf("ticket", "banner", "exclamation"), ran)
-        assertEquals(listOf(Outcome.FAIL, Outcome.PASS, Outcome.FAIL), report.results.map { it.outcome })
-        assertTrue(report.results.all { it.evidence == null })
+        assertEquals(listOf(false, true, false), report.rules.map { it.passed })
+        assertEquals(listOf(Outcome.FAIL, Outcome.PASS, Outcome.FAIL), report.findings.map { it.outcome })
+        assertEquals(rulesOnly.rules, report.rules.map { it.rule })
+        assertTrue(report.requirements.isEmpty())
     }
 
     @Test
@@ -74,6 +81,27 @@ class CheckTest {
         assertTrue(judge.requests.isEmpty())
         assertEquals("scripted", report.judge)
         assertEquals("", report.model)
+        val json = Json.parseToJsonElement(report.toJson()).jsonObject
+        assertEquals(JsonPrimitive("scripted"), json["judge"])
+        assertEquals(JsonNull, json["model"])
+    }
+
+    @Test
+    fun `a blank requirement text is an invalid request when the contract is built`() {
+        assertFailsWith<KleeneException.InvalidRequest> { contract("c") { +" " } }
+        assertFailsWith<KleeneException.InvalidRequest> { contract("c") { +"" } }
+        assertFailsWith<KleeneException.InvalidRequest> { val c by contract { +" " } }
+    }
+
+    @Test
+    fun `a rules-only report says no model was called instead of naming a judge and model`() = runTest {
+        val rulesOnly by contract { rule("Has a ticket number") { false } }
+
+        val report = ai.check(output, rulesOnly)
+
+        assertEquals("contract \"rulesOnly\": FAIL (no model call)\n  FAIL     Has a ticket number", report.toString())
+        val error = assertFailsWith<AssertionError> { report.assertPassed() }
+        assertContains(error.message!!, "contract \"rulesOnly\" failed (no model call)")
     }
 
     @Test
@@ -108,19 +136,48 @@ class CheckTest {
     }
 
     @Test
-    fun `results list rules then requirements, each requirement decided by the Kleene's policy`() = runTest {
+    fun `a String source is sent as a JSON string`() = runTest {
+        ai.check(output, uploadError, source = "disk full")
+        ai.check(output, uploadError, source = State.Text("disk full"))
+
+        assertEquals(judge.requests[1].state, judge.requests[0].state)
+    }
+
+    @Test
+    fun `a JsonElement source is sent as the element`() = runTest {
+        val source = buildJsonObject { put("error", "ENOSPC") }
+
+        ai.check(output, uploadError, source = source)
+        ai.check(output, uploadError, source = State.Json(source))
+
+        assertEquals(judge.requests[1].state, judge.requests[0].state)
+    }
+
+    @Test
+    fun `findings list rules then requirements, each requirement decided by the Kleene's policy`() = runTest {
         val report = ai.check(output, uploadError)
 
         assertEquals(
             listOf("Fits the error banner", "Says the upload failed", "Makes clear that no files were saved", "Tells the user to retry"),
-            report.results.map { it.label },
+            report.findings.map { it.label },
         )
-        assertEquals(listOf(Outcome.PASS, Outcome.PASS, Outcome.UNKNOWN, Outcome.FAIL), report.results.map { it.outcome })
-        assertNull(report.results[0].evidence)
-        assertEquals(0.62, assertNotNull(report.results[2].evidence).probabilityOf(true))
+        assertEquals(listOf(Outcome.PASS, Outcome.PASS, Outcome.UNKNOWN, Outcome.FAIL), report.findings.map { it.outcome })
+        assertEquals(report.rules + report.requirements, report.findings)
+        assertEquals(0.62, report.requirements[1].verdict.evidence.pTrue)
         assertEquals("scripted", report.judge)
         assertEquals("scripted", report.model)
         assertEquals(ai.policy, report.policy)
+    }
+
+    @Test
+    fun `requirements are index-aligned with the contract and keep the verdict`() = runTest {
+        val report = ai.check(output, uploadError)
+
+        assertEquals(uploadError.requirements, report.requirements.map { it.requirement })
+        val unknown = assertIs<Verdict.Unknown<Boolean>>(report.requirements[1].verdict)
+        assertContains(unknown.reason, "0.62")
+        assertEquals(Verdict.Accepted(true, unknown.evidence, Policy(0.6)), report.requirements[1].verdict.at(Policy(0.6)))
+        assertEquals(1, judge.requests.size)
     }
 
     @Test
@@ -129,7 +186,7 @@ class CheckTest {
 
         val report = strict.check(output, uploadError)
 
-        assertEquals(Outcome.UNKNOWN, report.results[1].outcome)
+        assertEquals(Outcome.UNKNOWN, report.findings[1].outcome)
         assertEquals(strict.policy, report.policy)
     }
 
@@ -144,7 +201,7 @@ class CheckTest {
     }
 
     @Test
-    fun `PASS when every result passes`() = runTest {
+    fun `PASS when every finding passes`() = runTest {
         assertEquals(Outcome.PASS, reportFor(0.97, 0.9).outcome)
     }
 
@@ -155,16 +212,13 @@ class CheckTest {
             +"Says the upload failed"
             +"Tells the user to retry"
         }
-        val judge = ScriptedJudge {
-            feels("reply.1", 0.97)
-            feels("reply.2", 0.9)
-        }
+        val judge = ScriptedJudge { requirements(reply, "Says the upload failed" to 0.97, "Tells the user to retry" to 0.9) }
 
         val report = Kleene(judge).check(output, reply)
 
         judge.requests.single()
-        assertEquals(listOf(Outcome.FAIL, Outcome.PASS, Outcome.PASS), report.results.map { it.outcome })
-        assertTrue(report.results.drop(1).all { it.evidence != null })
+        assertEquals(listOf(Outcome.FAIL, Outcome.PASS, Outcome.PASS), report.findings.map { it.outcome })
+        assertEquals(listOf(Outcome.PASS, Outcome.PASS), report.requirements.map { it.outcome })
         assertEquals(Outcome.FAIL, report.outcome)
     }
 
@@ -174,7 +228,7 @@ class CheckTest {
     }
 
     @Test
-    fun `assertPassed on UNKNOWN throws an inconclusive AssertionError with the per-result table`() = runTest {
+    fun `assertPassed on UNKNOWN throws an inconclusive AssertionError with the per-finding table`() = runTest {
         val report = reportFor(0.97, 0.5)
 
         val error = assertFailsWith<AssertionError> { report.assertPassed() }
@@ -187,7 +241,7 @@ class CheckTest {
     }
 
     @Test
-    fun `assertPassed on FAIL throws with the per-result table`() = runTest {
+    fun `assertPassed on FAIL throws with the per-finding table`() = runTest {
         val report = ai.check(output, uploadError)
 
         val error = assertFailsWith<AssertionError> { report.assertPassed() }
@@ -206,7 +260,7 @@ class CheckTest {
             +"Says the upload failed"
             rule("Sees the output") { seen = it; true }
         }
-        val judge = ScriptedJudge { feels("watched.1", 0.97) }
+        val judge = ScriptedJudge { requirements(watched, "Says the upload failed" to 0.97) }
 
         Kleene(judge).check(original, watched)
 
@@ -219,24 +273,24 @@ class CheckTest {
     fun `an explicit name is used when the contract is not bound to a property`() = runTest {
         val judge = ScriptedJudge { feels("reply.1", 0.97) }
 
-        Kleene(judge).check(output, contract(name = "reply") { +"Says the upload failed" })
+        Kleene(judge).check(output, contract("reply") { +"Says the upload failed" })
 
         assertEquals("reply.1", judge.requests.single().questions.single().name)
     }
 
     @Test
-    fun `the property name wins over an explicit name`() {
-        val bound by contract(name = "reply") { +"Says the upload failed" }
+    fun `a contract without a name is unnamed until it is bound with by`() {
+        val unnamed: Contract.Unnamed = contract { +"Says the upload failed" }
+        val bound by unnamed
 
         assertEquals("bound", bound.name)
+        assertEquals(listOf("Says the upload failed"), bound.requirements)
     }
 
     @Test
-    fun `a contract without a name throws on first check, not at definition`() = runTest {
-        val unnamed = contract { +"Says the upload failed" }
-
-        assertFailsWith<IllegalStateException> { ai.check(output, unnamed) }
-        assertTrue(judge.requests.isEmpty())
+    fun `an empty contract is an invalid request at definition`() {
+        assertFailsWith<KleeneException.InvalidRequest> { contract { "Says the upload failed" } }
+        assertFailsWith<KleeneException.InvalidRequest> { contract("reply") { } }
     }
 
     @Test
@@ -247,7 +301,7 @@ class CheckTest {
     }
 
     @Test
-    fun `toJson reports contract, outcome, judge, model, policy and each result`() = runTest {
+    fun `toJson reports contract, outcome, judge, model, policy and each finding`() = runTest {
         val report = reportFor(0.97, 0.5)
 
         val expected = buildJsonObject {
@@ -261,7 +315,7 @@ class CheckTest {
                 put("falseAt", 0.15)
                 put("minConfidence", JsonNull)
             }
-            putJsonArray("results") {
+            putJsonArray("findings") {
                 addJsonObject { put("label", "Fits the error banner"); put("kind", "rule"); put("outcome", "PASS") }
                 addJsonObject { put("label", "Says the upload failed"); put("kind", "requirement"); put("outcome", "PASS"); put("pTrue", 0.97) }
                 addJsonObject { put("label", "Tells the user to retry"); put("kind", "requirement"); put("outcome", "UNKNOWN"); put("pTrue", 0.5) }
@@ -270,16 +324,36 @@ class CheckTest {
         assertEquals(expected, Json.parseToJsonElement(report.toJson()))
     }
 
+    @Test
+    fun `toString prints the outcome, judge, model and one row per finding`() = runTest {
+        val report = ai.check(output, uploadError)
+
+        val expected = """
+            contract "uploadError": FAIL (judge scripted, model scripted)
+              PASS     Fits the error banner
+              PASS     Says the upload failed                p(true)=0.97
+              UNKNOWN  Makes clear that no files were saved  p(true)=0.62
+              FAIL     Tells the user to retry               p(true)=0.05
+        """.trimIndent()
+        assertEquals(expected, report.toString())
+    }
+
+    @Test
+    fun `toString and assertPassed do not throw for a report without findings`() {
+        // Unreachable from the public API (contract() rejects an empty contract); guards the internal constructor.
+        val report = Report(uploadError, emptyList(), emptyList(), "scripted", "", Policy())
+
+        assertEquals("contract \"uploadError\": PASS (no model call)", report.toString())
+        report.assertPassed()
+    }
+
     private suspend fun reportFor(failed: Double, retry: Double): Report {
         val reply by contract {
             +"Says the upload failed"
             +"Tells the user to retry"
             rule("Fits the error banner") { true }
         }
-        val judge = ScriptedJudge {
-            feels("reply.1", failed)
-            feels("reply.2", retry)
-        }
+        val judge = ScriptedJudge { requirements(reply, "Says the upload failed" to failed, "Tells the user to retry" to retry) }
         return Kleene(judge).check(output, reply)
     }
 }
