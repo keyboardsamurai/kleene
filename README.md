@@ -111,24 +111,18 @@ The name comes from Stephen Kleene's three-valued logic: `TRUE and UNKNOWN` is U
 
 ## Install
 
-Kleene is not on Maven Central yet. Install it into your local Maven repository (JDK 17, Maven):
-
-```sh
-git clone https://github.com/keyboardsamurai/kleene.git
-cd kleene
-mvn -pl kleene -am install
-```
+Add the dependency from Maven Central (JDK 17, Kotlin 2.x):
 
 ```xml
 <dependency>
     <groupId>com.antonioagudo.libs</groupId>
     <artifactId>kleene</artifactId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
-Gradle builds resolve it after you add `mavenLocal()` to `repositories`. Kotlin 2.x; runtime dependencies are
-only `kotlinx-coroutines-core` and `kotlinx-serialization-json`.
+Runtime dependencies are Kotlin's standard library, `kotlinx-coroutines-core`, and
+`kotlinx-serialization-json`.
 
 Set `KLEENE_MODEL` (for example `jev-1.13.0`) and `KLEENE_API_KEY`, or point `KLEENE_BASE_URL` at a local Judge.
 

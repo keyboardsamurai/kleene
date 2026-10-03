@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.antonioagudo.libs</groupId>
         <artifactId>kleene-parent</artifactId>
-        <version>0.2.0-SNAPSHOT</version>
+        <version>0.2.0</version>
     </parent>
 
     <artifactId>kleene-demo</artifactId>

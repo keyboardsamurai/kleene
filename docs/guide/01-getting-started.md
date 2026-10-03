@@ -7,29 +7,19 @@ such as TypeSafe's Jev or a local Kev. It returns probabilities read from model 
 
 ## Install
 
-Kleene is not on Maven Central yet. Build it and install it into your local Maven repository (`~/.m2`). You need
-JDK 17 and Maven:
-
-```sh
-git clone https://github.com/keyboardsamurai/kleene.git
-cd kleene
-mvn -pl kleene -am install   # runs the unit tests, installs kleene-parent and kleene
-```
-
-Add the dependency to your project:
+Add the dependency from Maven Central to your project:
 
 ```xml
 <dependency>
     <groupId>com.antonioagudo.libs</groupId>
     <artifactId>kleene</artifactId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.2.0</version>
 </dependency>
 ```
 
-Gradle builds resolve it after you add `mavenLocal()` to `repositories`.
-
-Kleene needs JDK 17 and Kotlin 2.x. Its only runtime dependencies are `kotlinx-coroutines-core` and
-`kotlinx-serialization-json`. All asking functions are `suspend` functions, so call them from a coroutine.
+Kleene needs JDK 17 and Kotlin 2.x. Its runtime dependencies are Kotlin's standard library,
+`kotlinx-coroutines-core`, and `kotlinx-serialization-json`. All asking functions are `suspend` functions,
+so call them from a coroutine.
 
 ## Configure a Judge
 

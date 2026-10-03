@@ -6,10 +6,25 @@
 
     <groupId>com.antonioagudo.libs</groupId>
     <artifactId>kleene-parent</artifactId>
-    <version>0.2.0-SNAPSHOT</version>
+    <version>0.2.0</version>
     <packaging>pom</packaging>
     <name>Kleene (parent)</name>
     <description>Typed, three-valued semantic judgments for Kotlin/JVM.</description>
+    <url>https://github.com/keyboardsamurai/kleene</url>
+
+    <developers>
+        <developer>
+            <id>keyboardsamurai</id>
+            <name>Antonio Agudo</name>
+            <url>https://github.com/keyboardsamurai</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/keyboardsamurai/kleene.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/keyboardsamurai/kleene.git</developerConnection>
+        <url>https://github.com/keyboardsamurai/kleene</url>
+    </scm>
 
     <licenses>
         <license>
@@ -98,6 +113,41 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <configuration>
+                            <bestPractices>true</bestPractices>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.9.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <excludeArtifacts>
+                                <excludeArtifact>kleene-demo</excludeArtifact>
+                            </excludeArtifacts>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <!-- `-Dgroups=...` selects tags explicitly, so stop excluding `live`. -->
             <id>explicit-groups</id>
