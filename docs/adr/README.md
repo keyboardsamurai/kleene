@@ -8,6 +8,7 @@
 - [0006](0006-laya-runs-behind-a-third-party-bridge.md): Laya runs behind a third-party bridge
 - [0007](0007-sweep-is-a-table-the-caller-picks-the-policy.md): `Sweep` is in `kleene`; it is a table, and the caller picks the Policy
 - [0008](0008-strict-record-and-replay-are-in-kleene.md): Strict record and replay are in `kleene`
+- [0009](0009-openai-decisions-is-a-judge-only-with-a-score-for-every-answer.md): OpenAI Decisions is a Judge only with a model score for every answer (proposed)
 
 ## Withdrawn
 
