@@ -24,6 +24,77 @@ when (urgent(message).truth) {
 }
 ```
 
+## Highlights
+
+### Route to your own enum, send doubt to a person in one line
+
+```kotlin
+enum class Queue(val label: String) { BILLING("billing"), TECH("technical support"), SALES("sales") }
+
+val route by ai.choose<Queue>("Which team should handle this ticket?") { it.label }
+
+suspend fun dispatch(ticket: String) {
+    val queue = route(ticket).orElse { return humanReview(ticket, it.reason) }   // "top p=0.62 < acceptAt=0.85"
+    send(ticket, queue)
+}
+```
+
+The options are your enum constants, so a `when` over `queue` must handle every team. `orElse` is `inline`,
+which lets `return` leave `dispatch` early.
+
+### Three questions, one model call. Change the threshold later for free
+
+```kotlin
+val answers = ai.ask(ticket, listOf(route, urgent, angry))   // one Judge call for all three
+
+answers[angry].truth            // UNKNOWN: p(true)=0.55 is inside the default band
+answers[angry].at(0.51).truth   // TRUE: the same answer under a looser Policy, zero model calls
+
+Evidence.feels(storedP, "jev", "jev-1.13.0").decide(Policy(acceptAt = 0.95))   // replay a p(true) from your DB
+```
+
+Kleene keeps the probabilities, so you can reapply a different Policy next week without paying again.
+
+### Check a model's reply the way you check code
+
+```kotlin
+val uploadError by contract {
+    rule("under 300 chars") { it.length <= 300 }
+    +"Says the upload failed"
+    +"Tells the user to retry"
+    +"Does not blame the user"
+}
+
+println(ai.check(reply, uploadError, source = ticket))
+```
+
+```
+contract "uploadError": FAIL (judge scripted, model scripted)
+  PASS     under 300 chars
+  PASS     Says the upload failed   p(true)=0.97
+  FAIL     Tells the user to retry  p(true)=0.05
+  UNKNOWN  Does not blame the user  p(true)=0.6
+```
+
+Rules run in plain Kotlin. All the requirements go to the Judge in one ask. `report.assertPassed()` turns the
+check into a test assertion, and `report.toJson()` gives your CI a file to keep.
+
+### Record real answers once, replay them in every build
+
+```kotlin
+// Once, against the real Judge: each ask is appended to the file.
+val ai = Kleene(SystemOneJudge.fromEnv().recordingTo(Path("src/test/resources/tickets.jsonl")))
+
+// Every build after that: the same answers, with no network and no API key.
+val ai = Kleene(ReplayJudge(Path("src/test/resources/tickets.jsonl")))
+```
+
+Replay is strict. If you change a question or an input, it throws `IllegalStateException`. It never falls through
+to a live model, and it never makes up an answer.
+
+Not sure which `acceptAt` to use? Measure it on your own labeled data with
+[Sweep](docs/guide/08-picking-a-policy-with-sweep.md).
+
 ## Why Kleene
 
 The usual way to put a model behind an `if` is to prompt a chat model for `{"answer": true, "confidence": 0.95}`
