@@ -1,28 +1,77 @@
 # Kleene
 
-**The model judges. Your code decides.**
+**Type-safe LLM decisions for Kotlin.**
 
-![A model sends its judgment to a Kotlin machine with a Policy dial. The machine emits TRUE, FALSE or UNKNOWN as a typed action, which routes a support ticket to its queue, flags an urgent message, and sends an unclear case to human review.](docs/kleene.jpg)
+Most LLM classification code eventually becomes `if (modelSaysYes) ...`.
+But what happens when the model isn't sure?
 
-Kleene is a Kotlin/JVM library that asks a decision model (a Judge, such as TypeSafe's Jev or a local Kev)
-yes/no, pick-one and rating questions about text or JSON. You get typed answers that a `when` can branch on.
-
-- **Probabilities, not prose.** A Judge returns a probability for each possible answer, read from model scores.
-  Kleene validates every number and keeps it exactly as received.
-- **Three outcomes.** Your `Policy` sets how sure is sure enough. Below that the answer is UNKNOWN: a value you
-  handle, never a hidden guess.
-- **Errors throw.** A timeout, a 5xx or a malformed response throws a `KleeneException`. It never becomes UNKNOWN.
+Kleene gives you **TRUE**, **FALSE**, and **UNKNOWN** — three outcomes your code must handle:
 
 ```kotlin
-val ai = Kleene(SystemOneJudge.fromEnv())
 val urgent by ai.feels("Needs a response today")
 
 when (urgent(message).truth) {
     TRUE -> flag(message)
     FALSE -> queue(message)
-    UNKNOWN -> humanReview(message)   // the Judge answered, but not clearly enough for your Policy
+    UNKNOWN -> humanReview(message)
 }
 ```
+
+**The model judges. Your code decides.**
+
+You set how much evidence is enough to act. UNKNOWN means the answer did not meet that bar;
+it is a value you can route to human review. Timeouts and malformed responses throw errors.
+
+## Try it in 30 seconds - no API key
+
+`ScriptedJudge` supplies fixed probabilities so you can try all three outcomes without a model,
+an account, or a server. This complete example uses the same `feels` and `when` as your application:
+
+```kotlin
+import kleene.*
+import kleene.Truth.*
+import kotlinx.coroutines.runBlocking
+
+fun main() = runBlocking {
+    for (p in listOf(0.95, 0.05, 0.55)) {
+        val ai = Kleene(ScriptedJudge { feels("urgent", p) })
+        val urgent by ai.feels("Needs a response today")
+
+        when (urgent("Can you look at this?").truth) {
+            TRUE -> println("TRUE -> flag")
+            FALSE -> println("FALSE -> queue")
+            UNKNOWN -> println("UNKNOWN -> human review")
+        }
+    }
+}
+```
+
+With the default thresholds, `0.95` becomes TRUE, `0.05` becomes FALSE, and `0.55` becomes UNKNOWN.
+The probabilities here are scripted: changing the message does not change the answer.
+
+Run the [example](demo/src/main/kotlin/kleene/demo/quickstart/Main.kt) with JDK 17 and Maven:
+
+```sh
+git clone https://github.com/keyboardsamurai/kleene.git
+cd kleene
+mvn -q -DskipTests install
+mvn -q -pl demo exec:java -Dexec.mainClass=kleene.demo.quickstart.MainKt
+```
+
+The first build downloads dependencies and may take longer than 30 seconds. The example itself
+makes no network calls and prints:
+
+```text
+TRUE -> flag
+FALSE -> queue
+UNKNOWN -> human review
+```
+
+Ready to use it in your project? [Install from Maven Central](#install), then
+[connect a real Judge](docs/guide/01-getting-started.md).
+For repeatable tests with recorded answers, use [ReplayJudge](docs/guide/07-testing.md).
+
+![A model sends its judgment to a Kotlin machine with a Policy dial. The machine emits TRUE, FALSE or UNKNOWN as a typed action, which routes a support ticket to its queue, flags an urgent message, and sends an unclear case to human review.](docs/kleene.jpg)
 
 ## Highlights
 
@@ -157,7 +206,7 @@ Start a local Judge only with `scripts/kev.sh` or `scripts/laya.sh`, one at a ti
 
 ## Demos
 
-The unpublished `demo` module ([ADR-0005](docs/adr/0005-demos-live-in-a-separate-module.md)) holds three programs:
+The unpublished `demo` module ([ADR-0005](docs/adr/0005-demos-live-in-a-separate-module.md)) includes the [no-key quick start](demo/src/main/kotlin/kleene/demo/quickstart/Main.kt) and three larger programs:
 
 - [Promise tests](demo/README.md): `check` a Contract of user promises over every git version of a real
   terms-of-service document, and reapply a Policy at zero model calls.
